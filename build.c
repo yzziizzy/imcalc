@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <fnmatch.h>
 #include <dirent.h>
+#include <libgen.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -46,10 +47,20 @@ char* sources[] = {
 	"src/ui/guiManager.c",
 	"src/utilities.c",
 	"src/window.c",
+	NULL,
+};
+
+char* ld_add[] = {
+	"-ldl", "-lutil", "-lm", 
+	"-lGL", "-lGLEW", "-lGLU",
+	"-lX11", "-lXfixes", 
+	"-lpng", 
+	"-lpcre2-8",
+	NULL,
 };
 
 
-
+// -ffast-math but without reciprocal approximations 
 char* cflags[] = {
 	"-I/usr/include/freetype2", 
 	"-std=gnu11", 
@@ -98,9 +109,11 @@ char* cflags[] = {
 	"-Werror=implicit-function-declaration",
 	"-Werror=uninitialized",
 	"-Werror=return-type",
+	NULL,
 };
 
-
+char** g_gcc_opts_list;
+char* g_gcc_opts_flat;
 
 struct child_process_info {
 	int pid;
@@ -139,6 +152,18 @@ int mkdirp(char* path, mode_t mode);
 char* resolve_path(char* in);
 #define path_join(...) path_join_(PP_NARG(__VA_ARGS__), __VA_ARGS__)
 char* path_join_(size_t nargs, ...);
+#define concat_lists(...) concat_lists_(PP_NARG(__VA_ARGS__), __VA_ARGS__)
+char** concat_lists_(int nargs, ...);
+#define strjoin(j, ...) strjoin_(j, PP_NARG(__VA_ARGS__), __VA_ARGS__)
+char* strjoin_(char* joiner, size_t nargs, ...);
+#define strcatdup(...) strcatdup_(PP_NARG(__VA_ARGS__), __VA_ARGS__)
+char* strcatdup_(size_t nargs, ...);
+void recursive_glob(char* base_path, char* pattern, int flags, rglob* results);
+char* dir_name(char* path);
+char* base_name(char* path);
+size_t list_len(char** list);
+char* join_str_list(char* list[], char* joiner);
+char* sprintfdup(char* fmt, ...);
 
 #define FSU_EXCLUDE_HIDDEN     (1<<0)
 #define FSU_NO_FOLLOW_SYMLINKS (1<<1)
@@ -157,16 +182,264 @@ int recurse_dirs(
 );
 
 
+int compile_source(char* src_path, char* obj_path) {
+	char* cmd = sprintfdup("gcc -c -o %s %s %s", obj_path, src_path, g_gcc_opts_flat);
+	return system(cmd);
+}
+
+int gen_deps(char* src_path, char* dep_path) {
+	//gcc -MM -MG -MT $1 -MF "build/$1.d" $1 $CFLAGS $LDADD
+	char* cmd = sprintfdup("gcc -MM -MG -MT %s -MF %s %s %s", src_path, dep_path, src_path, g_gcc_opts_flat);
+	return system(cmd);
+}
+
+void check_source(char* raw_src_path) {
+	char* src_path = resolve_path(raw_src_path);
+	char* src_dir = dir_name(raw_src_path);
+	char* base = base_name(src_path);
+	
+	char* build_dir = path_join("build", src_dir);
+	char* obj_path = path_join(build_dir, base);
+	
+	// cheap and dirty
+	size_t olen = strlen(obj_path);
+	obj_path[olen-1] = 'o';
+
+	char* dep_path = strcatdup(build_dir, "/", base, ".d");
+
+	
+	mkdirp(build_dir, 0755);
+	
+	gen_deps(src_path, dep_path);
+	compile_source(src_path, obj_path);
+	//gcc -c -o $2 $1 $CFLAGS $LDADD
+}
+
+
 
 int main(int argc, char* argv[]) {
 	
 	mkdirp("build", 0755);
 	
+	g_gcc_opts_list = concat_lists(ld_add, cflags);
+	g_gcc_opts_flat = join_str_list(g_gcc_opts_list, " ");
 	
+	rglob src;
+	//recursive_glob("src", "*.[ch]", 0, &src);
+	
+	for(int i = 0; sources[i]; i++) {
+		printf("%i: %s\n", i, sources[i]);
+		check_source(sources[i]);
+	}
 //	printf("%d: %s\n", err, strerror(errno));
 	return 0;
 }
 
+
+
+
+
+
+
+size_t list_len(char** list) {
+	size_t total = 0;
+	for(; *list; list++) total++;
+	return total;
+}
+
+char** concat_lists_(int nargs, ...) {
+	size_t total = 0;
+	char** out, **end;
+
+	if(nargs == 0) return NULL;
+
+	// calculate total list length
+	va_list va;
+	va_start(va, nargs);
+
+	for(size_t i = 0; i < nargs; i++) {
+		char** s = va_arg(va, char**);
+		if(s) total += list_len(s);
+	}
+
+	va_end(va);
+
+	out = malloc((total + 1) * sizeof(char**));
+	end = out;
+
+	va_start(va, nargs);
+	
+	// concat lists
+	for(size_t i = 0; i < nargs; i++) {
+		char** s = va_arg(va, char**);
+		size_t l = list_len(s);
+		
+		if(s) {
+			memcpy(end, s, l * sizeof(*s));
+			end += l;
+		}
+	}
+
+	va_end(va);
+
+	*end = 0;
+
+	return out;
+}
+
+
+char* join_str_list(char* list[], char* joiner) {
+	size_t list_len = 0;
+	size_t total = 0;
+	size_t jlen = strlen(joiner);
+	
+	// calculate total length
+	for(int i = 0; list[i]; i++) {
+		list_len++;
+		total += strlen(list[i]);
+	}
+	
+	if(total == 0) return strdup("");
+	
+	total += (list_len - 1) * jlen;
+	char* out = malloc((total + 1) * sizeof(*out));
+	
+	char* end = out;
+	for(int i = 0; list[i]; i++) {
+		char* s = list[i];
+		size_t l = strlen(s);
+		
+		if(i > 0) {
+			memcpy(end, joiner, jlen);
+			end += jlen;
+		}
+		
+		if(s) {
+			memcpy(end, s, l);
+			end += l;
+		}
+		
+		total += strlen(list[i]);
+	}
+	
+	*end = 0;
+	
+	return out;
+}
+
+// concatenate all argument strings together in a new buffer
+char* strcatdup_(size_t nargs, ...) {
+	size_t total = 0;
+	char* out, *end;
+	
+	if(nargs == 0) return NULL;
+	
+	// calculate total buffer len
+	va_list va;
+	va_start(va, nargs);
+	
+	for(size_t i = 0; i < nargs; i++) {
+		char* s = va_arg(va, char*);
+		if(s) total += strlen(s);
+	}
+	
+	va_end(va);
+	
+	out = malloc((total + 1) * sizeof(char*));
+	end = out;
+	
+	va_start(va, nargs);
+	
+	for(size_t i = 0; i < nargs; i++) {
+		char* s = va_arg(va, char*);
+		if(s) {
+			strcpy(end, s); // not exactly the ost efficient, but maybe faster than
+			end += strlen(s); // a C version. TODO: test the speed
+		};
+	}
+	
+	va_end(va);
+	
+	*end = 0;
+	
+	return out;
+}
+
+
+// concatenate all argument strings together in a new buffer,
+//    with the given joining string between them
+char* strjoin_(char* joiner, size_t nargs, ...) {
+	size_t total = 0;
+	char* out, *end;
+	size_t j_len;
+	
+	if(nargs == 0) return NULL;
+	
+	// calculate total buffer len
+	va_list va;
+	va_start(va, nargs);
+	
+	for(size_t i = 0; i < nargs; i++) {
+		char* s = va_arg(va, char*);
+		if(s) total += strlen(s);
+	}
+	
+	va_end(va);
+	
+	j_len = strlen(joiner);
+	total += j_len * (nargs - 1);
+	
+	out = malloc((total + 1) * sizeof(char*));
+	end = out;
+	
+	va_start(va, nargs);
+	
+	for(size_t i = 0; i < nargs; i++) {
+		char* s = va_arg(va, char*);
+		if(s) {
+			if(i > 0) {
+				strcpy(end, joiner);
+				end += j_len;
+			}
+			
+			strcpy(end, s); // not exactly the ost efficient, but maybe faster than
+			end += strlen(s); // a C version. TODO: test the speed
+		};
+	}
+	
+	va_end(va);
+	
+	*end = 0;
+	
+	return out;
+}
+
+// allocates a new buffer and calls sprintf with it
+// why isn't this a standard function?
+char* sprintfdup(char* fmt, ...) {
+	va_list va;
+	
+	va_start(va, fmt);
+	size_t n = vsnprintf(NULL, 0, fmt, va);
+	char* buf = malloc(n + 1);
+	va_end(va);
+	
+	va_start(va, fmt);
+	vsnprintf(buf, n + 1, fmt, va);
+	va_end(va);
+	
+	return buf;
+}
+
+char* dir_name(char* path) {
+	char* n = strdup(path);
+	return dirname(n);
+}
+
+char* base_name(char* path) {
+	char* n = strdup(path);
+	return basename(n);
+}
 
 
 int rglob_fn(char* full_path, char* file_name, unsigned char type, void* _results) {
