@@ -94,6 +94,7 @@ objlist=""
 mkdir -p build
 
 declare -A mtime_lookup
+declare -A realpath_lookup
 
 
 function checkdeps() {
@@ -136,7 +137,13 @@ function checkdeps() {
 	list=`cat build/$1.d | tr '\\n' '\\\\' | sed s/\\\\\\\\//g | sed s/^[^:]*://g`
 	for dep in $list; do
 		
-		depp=$dep #`realpath $dep`
+		
+		depp=${realpath_lookup[$dep]}
+		if [[ -z $depp ]]; then
+			depp=`realpath $dep`
+			realpath_lookup[$dep]=$depp
+		fi
+		
 		if [[ -z ${mtime_lookup[$depp]} ]]; then
 			echo "    missing dep mtime $depp"
 			mtime_lookup[$depp]=`stat -c "%Y" $dep 2> /dev/null`
@@ -172,6 +179,7 @@ for pair in $llist; do
 	f=`realpath ${pair%:*}`;
 	d=${pair#*:};
 	mtime_lookup[$f]=${d%.*}
+	realpath_lookup[$d]=${d%.*}
 	#echo "$f = $d"
 done
 
@@ -186,7 +194,7 @@ for f in $SOURCES; do
 done
 
 echo "Linking executable..."
-#gcc -o imcalc $objlist $CFLAGS $LDADD
+gcc -o imcalc $objlist $CFLAGS $LDADD
 
 
 
