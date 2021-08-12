@@ -14,7 +14,6 @@
 #include <fnmatch.h>
 #include <dirent.h>
 #include <libgen.h>
-
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -141,15 +140,39 @@ typedef struct rglob {
 	
 } rglob;
 
+typedef struct strlist {
+	int len;
+	int alloc;
+	char** entries;
+} strlist;
+
 
 #define PP_ARG_N(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60, _61, _62, _63, N, ...) N
 #define PP_RSEQ_N() 63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0
 #define PP_NARG_(...) PP_ARG_N(__VA_ARGS__)
 #define PP_NARG(...)  PP_NARG_(__VA_ARGS__, PP_RSEQ_N())
 
+#define check_alloc(x) \
+	if((x)->len >= (x)->alloc) { \
+		(x)->alloc *= 2; \
+		(x)->entries = realloc((x)->entries, (x)->alloc * sizeof(*(x)->entries)); \
+	}
+
+strlist* strlist_new() {
+	strlist* sl = malloc(sizeof(*sl));
+	sl->len = 0;
+	sl->alloc = 32;
+	sl->entries = malloc(sl->alloc * sizeof(*sl->entries));
+	return sl;
+}
+void strlist_push(strlist* sl, char* e) {
+	check_alloc(sl);
+	sl->entries[sl->len++] = e;
+}
+
 struct child_process_info* exec_process_pipe(char* exec_path, char* args[]);
 int mkdirp(char* path, mode_t mode);
-char* resolve_path(char* in);
+char* resolve_path(char* in, time_t* mtime_out);
 #define path_join(...) path_join_(PP_NARG(__VA_ARGS__), __VA_ARGS__)
 char* path_join_(size_t nargs, ...);
 #define concat_lists(...) concat_lists_(PP_NARG(__VA_ARGS__), __VA_ARGS__)
@@ -164,7 +187,10 @@ char* base_name(char* path);
 size_t list_len(char** list);
 char* join_str_list(char* list[], char* joiner);
 char* sprintfdup(char* fmt, ...);
-
+char* read_whole_file(char* path, size_t* srcLen);
+static inline char* strskip(char* s, char* skip) {
+	return s + strspn(s, skip);
+}
 #define FSU_EXCLUDE_HIDDEN     (1<<0)
 #define FSU_NO_FOLLOW_SYMLINKS (1<<1)
 #define FSU_INCLUDE_DIRS       (1<<2)
@@ -182,19 +208,119 @@ int recurse_dirs(
 );
 
 
+
+typedef struct realname_entry {
+	char* path;
+	char* realname;
+	time_t mtime;
+} realname_entry;
+struct {
+	struct {
+		int len;
+		int alloc;
+		struct {
+			char* fake_name;
+			realname_entry* entry;
+		}* entries;
+	} lookup;
+
+	int len;
+	int alloc;
+	struct realname_entry* entries;
+} realname_cache;
+
+void realname_cache_init();
+time_t realname_cache_add(char* fake_name, char* real_name);
+realname_entry* realname_cache_search_real(char* real_name);
+realname_entry* realname_cache_search(char* fake_name);
+char* realname_cache_find(char* fake_name);
+
+
 int compile_source(char* src_path, char* obj_path) {
 	char* cmd = sprintfdup("gcc -c -o %s %s %s", obj_path, src_path, g_gcc_opts_flat);
-	return system(cmd);
+	int ret = system(cmd);
+	
+	free(cmd);
+	return ret;
 }
 
-int gen_deps(char* src_path, char* dep_path) {
-	//gcc -MM -MG -MT $1 -MF "build/$1.d" $1 $CFLAGS $LDADD
-	char* cmd = sprintfdup("gcc -MM -MG -MT %s -MF %s %s %s", src_path, dep_path, src_path, g_gcc_opts_flat);
-	return system(cmd);
+size_t span_path(char* s) {
+	size_t n = 0;
+	for(; *s; s++, n++) {
+		if(isspace(*s)) break; 
+		if(*s == '\\') {
+			s++;
+			n++;
+		}
+	} 
+	return n;
+}
+
+int gen_deps(char* src_path, char* dep_path, time_t src_mtime, time_t obj_mtime) {
+	time_t dep_mtime = 0;
+	
+	char* real_dep_path = resolve_path(dep_path, &dep_mtime);
+	if(dep_mtime < src_mtime) {
+		//gcc -MM -MG -MT $1 -MF "build/$1.d" $1 $CFLAGS $LDADD
+		printf("  generating deps\n"); 
+		char* cmd = sprintfdup("gcc -MM -MG -MT '' -MF %s %s %s", dep_path, src_path, g_gcc_opts_flat);
+		system(cmd);
+		free(cmd);
+	}
+	
+	size_t dep_src_len = 0;
+	char* dep_src = read_whole_file(dep_path, &dep_src_len);
+	if(!dep_src) goto FAIL;
+	
+	strlist* dep_list = strlist_new();
+	
+	// skip the first filename junk
+	char* s = strchr(dep_src, ':');
+	s++;
+	
+	int ret = 0;
+	
+	// gather dep strings, ignoring line continuations
+	while(*s) {
+		do {
+			s = strskip(s, " \t\r\n");
+			if(*s == '\\') {
+				 if(s[1] == '\r') s++;
+				 if(s[1] == '\n') s++;
+			}
+		} while(isspace(*s));
+		
+		int dlen = span_path(s);
+		if(dlen == 0) break;
+		
+		time_t dep_mtime;
+		char* dep_fake = strndup(s, dlen);
+		char* dep_real = resolve_path(dep_fake, &dep_mtime);
+		if(dep_mtime > obj_mtime) {
+			printf("    newer dep: %s: %ld \n", dep_fake, dep_mtime);
+			ret = 1;
+		}
+	
+		strlist_push(dep_list, dep_real);
+		
+		free(dep_fake);
+		free(dep_real);
+		
+		s += dlen;
+	}
+	
+
+	free(dep_src);
+	
+	return ret;
+FAIL:
+	return 0;
 }
 
 void check_source(char* raw_src_path) {
-	char* src_path = resolve_path(raw_src_path);
+	time_t src_mtime, obj_mtime = 0, dep_mtime = 0;
+	
+	char* src_path = resolve_path(raw_src_path, &src_mtime);
 	char* src_dir = dir_name(raw_src_path);
 	char* base = base_name(src_path);
 	
@@ -204,20 +330,38 @@ void check_source(char* raw_src_path) {
 	// cheap and dirty
 	size_t olen = strlen(obj_path);
 	obj_path[olen-1] = 'o';
-
+		
 	char* dep_path = strcatdup(build_dir, "/", base, ".d");
 
 	
+	char* real_obj_path = resolve_path(obj_path, &obj_mtime);
+	if(obj_mtime < src_mtime) {
+		printf("  objtime compile\n");
+		compile_source(src_path, real_obj_path);
+		return;
+	}
+	
+//	char* real_dep_path = resolve_path(dep_path, &dep_mtime);
+//	if(dep_mtime >= src_mtime) {
+//		printf("  deptime compile\n");
+//		compile_source(src_path, real_obj_path);
+//		return;
+//	}
+	
 	mkdirp(build_dir, 0755);
 	
-	gen_deps(src_path, dep_path);
-	compile_source(src_path, obj_path);
+	if(gen_deps(src_path, dep_path, src_mtime, obj_mtime)) {
+		printf("  deep dep compile\n");
+		compile_source(src_path, real_obj_path);
+	}
 	//gcc -c -o $2 $1 $CFLAGS $LDADD
 }
 
 
 
 int main(int argc, char* argv[]) {
+	realname_cache_init();
+	
 	
 	mkdirp("build", 0755);
 	
@@ -446,10 +590,7 @@ int rglob_fn(char* full_path, char* file_name, unsigned char type, void* _result
 	rglob* res = (rglob*)_results;
 	
 	if(0 == fnmatch(res->pattern, file_name, 0)) {
-		if(res->len >= res->alloc) {
-			res->alloc *= 2;
-			res->entries = realloc(res->entries, sizeof(*res->entries) * res->alloc);
-		}
+		check_alloc(res);
 		
 		res->entries[res->len].type = type;
 		res->entries[res->len].full_path = strdup(full_path);
@@ -504,12 +645,74 @@ FAIL:
 }
 
 
+void realname_cache_init() {
+	realname_cache.len = 0;
+	realname_cache.alloc = 1024;
+	realname_cache.entries = malloc(realname_cache.alloc * sizeof(*realname_cache.entries));
+	realname_cache.lookup.len = 0;
+	realname_cache.lookup.alloc = 1024;
+	realname_cache.lookup.entries = malloc(realname_cache.lookup.alloc * sizeof(*realname_cache.lookup.entries));
+
+}
+
+time_t realname_cache_add(char* fake_name, char* real_name) {
+	realname_entry* e = realname_cache_search(fake_name);
+	if(e) return e->mtime;
+	
+	e = realname_cache_search_real(real_name);
+	if(!e) {
+		struct stat st;
+		lstat(real_name, &st);
+		
+		e = &realname_cache.entries[realname_cache.len];
+		e->realname = strdup(real_name);
+		e->mtime = st.st_mtim.tv_sec;
+		realname_cache.len++;
+	}
+	
+	check_alloc(&realname_cache.lookup);
+	realname_cache.lookup.entries[realname_cache.lookup.len].fake_name = strdup(fake_name);
+	realname_cache.lookup.entries[realname_cache.lookup.len++].entry = e;
+	
+	return e->mtime;
+}
+
+realname_entry* realname_cache_search_real(char* real_name) {
+	for(int i = 0; i < realname_cache.len; i++) {
+		if(0 == strcmp(real_name, realname_cache.entries[i].realname)) {
+			return &realname_cache.entries[i];
+		}
+	}
+	
+	return NULL;
+}
+realname_entry* realname_cache_search(char* fake_name) {
+	for(int i = 0; i < realname_cache.lookup.len; i++) {
+		if(0 == strcmp(fake_name, realname_cache.lookup.entries[i].fake_name)) {
+			return realname_cache.lookup.entries[i].entry;
+		}
+	}
+	
+	return NULL;
+}
+char* realname_cache_find(char* fake_name) {
+	realname_entry* r = realname_cache_search(fake_name);
+	return r ? r->realname : NULL;
+}
+
+
 // works like realpath(), except also handles ~/
-char* resolve_path(char* in) {
+char* resolve_path(char* in, time_t* mtime_out) {
 	int tmp_was_malloced = 0;
 	char* out, *tmp;
 	
 	if(!in) return NULL;
+	
+	realname_entry* e = realname_cache_search(in);
+	if(e) {
+		if(mtime_out) *mtime_out = e->mtime;
+		return strdup(e->realname);
+	}
 	
 	// skip leading whitespace
 	while(isspace(*in)) in++;
@@ -531,7 +734,20 @@ char* resolve_path(char* in) {
 	
 	if(tmp_was_malloced) free(tmp);
 	
-	return out;
+	time_t t;
+	if(out) {
+		// put it in the cache
+		t = realname_cache_add(in, out);
+	}
+	else {
+		// temporary
+		struct stat st;
+		lstat(in, &st);
+		t = st.st_mtim.tv_sec;
+	}
+	
+	if(mtime_out) *mtime_out = t;	
+	return out ? out : in;
 }
 
 
@@ -809,6 +1025,38 @@ struct child_process_info* exec_process_pipe(char* exec_path, char* args[]) {
 	}
 	
 	return NULL; // shouldn't reach here
+}
+
+char* read_whole_file(char* path, size_t* srcLen) {
+	size_t fsize, total_read = 0, bytes_read;
+	char* contents;
+	FILE* f;
+	
+	
+	f = fopen(path, "rb");
+	if(!f) {
+		fprintf(stderr, "Could not open file \"%s\"\n", path);
+		return NULL;
+	}
+	
+	fseek(f, 0, SEEK_END);
+	fsize = ftell(f);
+	rewind(f);
+	
+	contents = malloc(fsize + 1);
+	
+	while(total_read < fsize) {
+		bytes_read = fread(contents + total_read, sizeof(char), fsize - total_read, f);
+		total_read += bytes_read;
+	}
+	
+	contents[fsize] = 0;
+	
+	fclose(f);
+	
+	if(srcLen) *srcLen = fsize;
+	
+	return contents;
 }
 
 
