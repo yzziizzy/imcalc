@@ -1,3 +1,4 @@
+// gcc -lutil build.c -o hacer && ./hacer
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -157,17 +158,271 @@ typedef struct strlist {
 		(x)->alloc *= 2; \
 		(x)->entries = realloc((x)->entries, (x)->alloc * sizeof(*(x)->entries)); \
 	}
-
-strlist* strlist_new() {
-	strlist* sl = malloc(sizeof(*sl));
+void strlist_init(strlist* sl) {
 	sl->len = 0;
 	sl->alloc = 32;
 	sl->entries = malloc(sl->alloc * sizeof(*sl->entries));
+}
+strlist* strlist_new() {
+	strlist* sl = malloc(sizeof(*sl));
+	strlist_init(sl);
 	return sl;
 }
 void strlist_push(strlist* sl, char* e) {
 	check_alloc(sl);
 	sl->entries[sl->len++] = e;
+}
+
+typedef unsigned long hash_t;
+
+hash_t strhash(char* str) {
+	unsigned long h = 0;
+	int c;
+
+	while(c = *str++) {
+		h = c + (h << 6) + (h << 16) - h;
+	}
+	return h;
+}
+hash_t strnhash(char* str, size_t n) {
+	unsigned long h = 0;
+	int c;
+
+	while((c = *str++) && n--) {
+		h = c + (h << 6) + (h << 16) - h;
+	}
+		
+	return h;
+}
+
+
+typedef struct {
+		hash_t hash;
+		char* str;
+		unsigned int len;
+		int refs;
+} string_cache_bucket;
+
+typedef struct {
+	int fill;
+	int alloc;
+	string_cache_bucket* buckets;
+} string_cache_t;
+
+string_cache_t string_cache;
+
+void string_cache_init(int alloc) {
+	string_cache.fill = 0;
+	string_cache.alloc = alloc ? alloc : 1024;
+	string_cache.buckets = calloc(1, string_cache.alloc * sizeof(*string_cache.buckets));
+}
+
+int string_cache_find_bucket(string_cache_t* ht, hash_t hash, char* key) {
+	int b = hash % ht->alloc;
+	
+	for(int i = 0; i < ht->alloc; i++) {
+		// empty bucket
+		if(ht->buckets[b].str == NULL) return b;
+		
+		// full bucket
+		if(ht->buckets[b].hash == hash) {
+			if(0 == strcmp(key, ht->buckets[b].str)) {
+				return b;
+			}
+		}
+		
+		// probe forward on collisions
+		b = (b + 1) % ht->alloc;
+	}
+	
+	// should never reach here
+	printf("oops. -1 bucket \n");
+	return -1;
+}
+
+void string_cache_expand(string_cache_t* ht) {
+	int old_alloc = ht->alloc;
+	ht->alloc *= 2;
+	
+	string_cache_bucket* old = ht->buckets;
+	ht->buckets = calloc(1, ht->alloc * sizeof(*ht->buckets));
+	
+	for(int i = 0, f = 0; i < old_alloc && f < ht->fill; i++) { 
+		if(!old[i].str) continue;
+		
+		int b = string_cache_find_bucket(ht, old[i].hash, old[i].str);
+		
+		ht->buckets[b] = old[i];
+		f++;
+	}
+	
+	free(old);
+}
+
+char* strcache(char* in) {
+	hash_t hash = strhash(in);
+	int b = string_cache_find_bucket(&string_cache, hash, in);
+	
+	if(!string_cache.buckets[b].str) {
+		if(string_cache.fill > string_cache.alloc * .80) {
+			string_cache_expand(&string_cache);
+			
+			// the bucket location has changed
+			b = string_cache_find_bucket(&string_cache, hash, in);
+		}
+		
+		string_cache.fill++;
+		
+		string_cache.buckets[b].str = strdup(in);
+		string_cache.buckets[b].hash = hash;
+		string_cache.buckets[b].refs = 1;
+		string_cache.buckets[b].len = strlen(in);
+	}
+	else {
+		string_cache.buckets[b].refs++;
+	}
+	
+	return string_cache.buckets[b].str;
+}
+
+char* strncache(char* in, size_t n) {
+	hash_t hash = strnhash(in, n);
+	int b = string_cache_find_bucket(&string_cache, hash, in);
+	
+	if(!string_cache.buckets[b].str) {
+		if(string_cache.fill > string_cache.alloc * .80) {
+			string_cache_expand(&string_cache);
+			
+			// the bucket location has changed
+			b = string_cache_find_bucket(&string_cache, hash, in);
+		}
+		
+		string_cache.fill++;
+		
+		string_cache.buckets[b].str = strndup(in, n);
+		string_cache.buckets[b].hash = hash;
+		string_cache.buckets[b].refs = 1;
+		string_cache.buckets[b].len = n;
+	}
+	else {
+		string_cache.buckets[b].refs++;
+	}
+	
+	return string_cache.buckets[b].str;
+}
+
+void struncache(char* in) {
+	hash_t hash = strhash(in);
+	int b = string_cache_find_bucket(&string_cache, hash, in);
+	
+	if(!string_cache.buckets[b].str) {
+		// normal string, free it
+		free(in);
+		return;
+	}
+	
+	string_cache.buckets[b].refs--;
+	if(string_cache.buckets[b].refs == 0) {
+		// just do nothing for now. deletion is a pain.
+	}
+}
+
+
+typedef struct {
+		hash_t hash;
+		char* key;
+		void* value;
+} hashbucket;
+
+typedef struct hashtable {
+	int fill;
+	int alloc;
+	hashbucket* buckets;
+
+} hashtable;
+
+
+void hash_init(hashtable* ht, int alloc) {
+	ht->fill = 0;
+	ht->alloc = alloc ? alloc : 128;
+	ht->buckets = calloc(1, ht->alloc * sizeof(*ht->buckets));
+}
+
+hashtable* hash_new(int alloc) {
+	hashtable* ht = malloc(sizeof(*ht));
+	hash_init(ht, alloc);
+	return ht;
+}
+
+int hash_find_bucket(hashtable* ht, hash_t hash, char* key) {
+	int b = hash % ht->alloc;
+	
+	for(int i = 0; i < ht->alloc; i++) {
+		// empty bucket
+		if(ht->buckets[b].key == NULL) return b;
+		
+		// full bucket
+		if(ht->buckets[b].hash == hash) {
+			if(0 == strcmp(key, ht->buckets[b].key)) {
+				return b;
+			}
+		}
+		
+		// probe forward on collisions
+		b = (b + 1) % ht->alloc;
+	}
+	
+	// should never reach here
+	printf("oops. -1 bucket \n");
+	return -1;
+}
+
+void hash_expand(hashtable* ht) {
+	int old_alloc = ht->alloc;
+	ht->alloc *= 2;
+	
+	hashbucket* old = ht->buckets;
+	ht->buckets = calloc(1, ht->alloc * sizeof(*ht->buckets));
+	
+	for(int i = 0, f = 0; i < old_alloc && f < ht->fill; i++) { 
+		if(!old[i].key) continue;
+		
+		int b = hash_find_bucket(ht, old[i].hash, old[i].key);
+		
+		ht->buckets[b] = old[i];
+		f++;
+	}
+	
+	free(old);
+}
+
+void hash_insert(hashtable* ht, char* key, void* value) {
+	
+	hash_t hash = strhash(key);
+	int b = hash_find_bucket(ht, hash, key);
+	
+	if(!ht->buckets[b].key) {
+		if(ht->fill > ht->alloc * .80) {
+			hash_expand(ht);
+			
+			// the bucket location has changed
+			b = hash_find_bucket(ht, hash, key);
+		}
+		
+		ht->fill++;
+	}
+	
+	ht->buckets[b].key = strcache(key);
+	ht->buckets[b].hash = hash;
+	ht->buckets[b].value = value;
+}
+
+void* hash_find(hashtable* ht, char* key) {
+
+	hash_t hash = strhash(key);
+	int b = hash_find_bucket(ht, hash, key);
+	 
+	return ht->buckets[b].value;
 }
 
 struct child_process_info* exec_process_pipe(char* exec_path, char* args[]);
@@ -210,11 +465,12 @@ int recurse_dirs(
 
 
 typedef struct realname_entry {
-	char* path;
 	char* realname;
 	time_t mtime;
 } realname_entry;
 struct {
+
+	/*
 	struct {
 		int len;
 		int alloc;
@@ -222,7 +478,9 @@ struct {
 			char* fake_name;
 			realname_entry* entry;
 		}* entries;
-	} lookup;
+	} lookup; */
+
+	hashtable names;
 
 	int len;
 	int alloc;
@@ -236,12 +494,33 @@ realname_entry* realname_cache_search(char* fake_name);
 char* realname_cache_find(char* fake_name);
 
 
+hashtable mkdir_cache;
+strlist compile_cache;
+
+void mkdirp_cached(char* path, mode_t mode) {
+	void* there = hash_find(&mkdir_cache, path);
+	if(!there) {
+		hash_insert(&mkdir_cache, path, NULL);
+		mkdirp(path, mode);
+	}
+}
+
+
+void compile_cache_execute() {
+	for(int i = 0; i < compile_cache.len; i++) {
+		system(compile_cache.entries[i]);
+		free(compile_cache.entries[i]);
+	}
+	
+	compile_cache.len = 0;
+}
+
 int compile_source(char* src_path, char* obj_path) {
 	char* cmd = sprintfdup("gcc -c -o %s %s %s", obj_path, src_path, g_gcc_opts_flat);
-	int ret = system(cmd);
 	
-	free(cmd);
-	return ret;
+	strlist_push(&compile_cache, cmd);
+	
+	return 0;
 }
 
 size_t span_path(char* s) {
@@ -256,23 +535,15 @@ size_t span_path(char* s) {
 	return n;
 }
 
-int gen_deps(char* src_path, char* dep_path, time_t src_mtime, time_t obj_mtime) {
-	time_t dep_mtime = 0;
-	
-	char* real_dep_path = resolve_path(dep_path, &dep_mtime);
-	if(dep_mtime < src_mtime) {
-		//gcc -MM -MG -MT $1 -MF "build/$1.d" $1 $CFLAGS $LDADD
-		printf("  generating deps\n"); 
-		char* cmd = sprintfdup("gcc -MM -MG -MT '' -MF %s %s %s", dep_path, src_path, g_gcc_opts_flat);
-		system(cmd);
-		free(cmd);
-	}
-	
+strlist* parse_gcc_dep_file(char* dep_file_path, time_t* newest_mtime) {
 	size_t dep_src_len = 0;
-	char* dep_src = read_whole_file(dep_path, &dep_src_len);
-	if(!dep_src) goto FAIL;
+	strlist* dep_list;
+	time_t newest = 0;
 	
-	strlist* dep_list = strlist_new();
+	char* dep_src = read_whole_file(dep_file_path, &dep_src_len);
+	if(!dep_src) return NULL;
+	
+	dep_list = strlist_new();
 	
 	// skip the first filename junk
 	char* s = strchr(dep_src, ':');
@@ -294,17 +565,14 @@ int gen_deps(char* src_path, char* dep_path, time_t src_mtime, time_t obj_mtime)
 		if(dlen == 0) break;
 		
 		time_t dep_mtime;
-		char* dep_fake = strndup(s, dlen);
+		char* dep_fake = strncache(s, dlen);
 		char* dep_real = resolve_path(dep_fake, &dep_mtime);
-		if(dep_mtime > obj_mtime) {
-			printf("    newer dep: %s: %ld \n", dep_fake, dep_mtime);
-			ret = 1;
-		}
+		if(dep_mtime > newest) newest = dep_mtime;
 	
 		strlist_push(dep_list, dep_real);
 		
-		free(dep_fake);
-		free(dep_real);
+		struncache(dep_fake);
+		struncache(dep_real);
 		
 		s += dlen;
 	}
@@ -312,7 +580,28 @@ int gen_deps(char* src_path, char* dep_path, time_t src_mtime, time_t obj_mtime)
 
 	free(dep_src);
 	
-	return ret;
+	if(newest_mtime) *newest_mtime = newest;
+	return dep_list;
+}
+
+int gen_deps(char* src_path, char* dep_path, time_t src_mtime, time_t obj_mtime) {
+	time_t dep_mtime = 0;
+	time_t newest_mtime = 0;
+	
+	char* real_dep_path = resolve_path(dep_path, &dep_mtime);
+	if(dep_mtime < src_mtime) {
+		//gcc -MM -MG -MT $1 -MF "build/$1.d" $1 $CFLAGS $LDADD
+		printf("  generating deps\n"); 
+		char* cmd = sprintfdup("gcc -MM -MG -MT '' -MF %s %s %s", dep_path, src_path, g_gcc_opts_flat);
+		system(cmd);
+		free(cmd);
+	}
+	
+	strlist* deps = parse_gcc_dep_file(real_dep_path, &newest_mtime);
+	
+	// free or process deps
+	
+	return newest_mtime > obj_mtime;
 FAIL:
 	return 0;
 }
@@ -332,7 +621,8 @@ void check_source(char* raw_src_path) {
 	obj_path[olen-1] = 'o';
 		
 	char* dep_path = strcatdup(build_dir, "/", base, ".d");
-
+	
+	mkdirp_cached(build_dir, 0755);
 	
 	char* real_obj_path = resolve_path(obj_path, &obj_mtime);
 	if(obj_mtime < src_mtime) {
@@ -348,7 +638,7 @@ void check_source(char* raw_src_path) {
 //		return;
 //	}
 	
-	mkdirp(build_dir, 0755);
+	
 	
 	if(gen_deps(src_path, dep_path, src_mtime, obj_mtime)) {
 		printf("  deep dep compile\n");
@@ -360,10 +650,13 @@ void check_source(char* raw_src_path) {
 
 
 int main(int argc, char* argv[]) {
+	string_cache_init(2048);
 	realname_cache_init();
+	strlist_init(&compile_cache);
+	hash_init(&mkdir_cache, 128);
 	
 	
-	mkdirp("build", 0755);
+	mkdirp_cached("build", 0755);
 	
 	g_gcc_opts_list = concat_lists(ld_add, cflags);
 	g_gcc_opts_flat = join_str_list(g_gcc_opts_list, " ");
@@ -372,9 +665,12 @@ int main(int argc, char* argv[]) {
 	//recursive_glob("src", "*.[ch]", 0, &src);
 	
 	for(int i = 0; sources[i]; i++) {
-		printf("%i: %s\n", i, sources[i]);
+		printf("%i: checking %s\n", i, sources[i]);
 		check_source(sources[i]);
 	}
+	
+	compile_cache_execute();
+	
 //	printf("%d: %s\n", err, strerror(errno));
 	return 0;
 }
@@ -577,12 +873,14 @@ char* sprintfdup(char* fmt, ...) {
 
 char* dir_name(char* path) {
 	char* n = strdup(path);
-	return dirname(n);
+	char* o = dirname(n);
+	return strcache(o);
 }
 
 char* base_name(char* path) {
 	char* n = strdup(path);
-	return basename(n);
+	char* o = basename(n);
+	return strcache(o);
 }
 
 
@@ -593,8 +891,8 @@ int rglob_fn(char* full_path, char* file_name, unsigned char type, void* _result
 		check_alloc(res);
 		
 		res->entries[res->len].type = type;
-		res->entries[res->len].full_path = strdup(full_path);
-		res->entries[res->len].file_name = strdup(file_name);
+		res->entries[res->len].full_path = strcache(full_path);
+		res->entries[res->len].file_name = strcache(file_name);
 		res->len++;
 	}
 	
@@ -649,30 +947,28 @@ void realname_cache_init() {
 	realname_cache.len = 0;
 	realname_cache.alloc = 1024;
 	realname_cache.entries = malloc(realname_cache.alloc * sizeof(*realname_cache.entries));
-	realname_cache.lookup.len = 0;
-	realname_cache.lookup.alloc = 1024;
-	realname_cache.lookup.entries = malloc(realname_cache.lookup.alloc * sizeof(*realname_cache.lookup.entries));
 
+	hash_init(&realname_cache.names, 1024);
 }
 
 time_t realname_cache_add(char* fake_name, char* real_name) {
-	realname_entry* e = realname_cache_search(fake_name);
+	realname_entry* e = hash_find(&realname_cache.names, fake_name);
 	if(e) return e->mtime;
 	
-	e = realname_cache_search_real(real_name);
+	e = hash_find(&realname_cache.names, real_name);
 	if(!e) {
 		struct stat st;
 		lstat(real_name, &st);
 		
 		e = &realname_cache.entries[realname_cache.len];
-		e->realname = strdup(real_name);
+		e->realname = strcache(real_name);
 		e->mtime = st.st_mtim.tv_sec;
 		realname_cache.len++;
+		
+		hash_insert(&realname_cache.names, real_name, e);
 	}
 	
-	check_alloc(&realname_cache.lookup);
-	realname_cache.lookup.entries[realname_cache.lookup.len].fake_name = strdup(fake_name);
-	realname_cache.lookup.entries[realname_cache.lookup.len++].entry = e;
+	hash_insert(&realname_cache.names, fake_name, e);
 	
 	return e->mtime;
 }
@@ -687,14 +983,9 @@ realname_entry* realname_cache_search_real(char* real_name) {
 	return NULL;
 }
 realname_entry* realname_cache_search(char* fake_name) {
-	for(int i = 0; i < realname_cache.lookup.len; i++) {
-		if(0 == strcmp(fake_name, realname_cache.lookup.entries[i].fake_name)) {
-			return realname_cache.lookup.entries[i].entry;
-		}
-	}
-	
-	return NULL;
+	return hash_find(&realname_cache.names, fake_name);
 }
+
 char* realname_cache_find(char* fake_name) {
 	realname_entry* r = realname_cache_search(fake_name);
 	return r ? r->realname : NULL;
@@ -711,7 +1002,7 @@ char* resolve_path(char* in, time_t* mtime_out) {
 	realname_entry* e = realname_cache_search(in);
 	if(e) {
 		if(mtime_out) *mtime_out = e->mtime;
-		return strdup(e->realname);
+		return strcache(e->realname);
 	}
 	
 	// skip leading whitespace
