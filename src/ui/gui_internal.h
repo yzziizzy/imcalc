@@ -56,7 +56,45 @@ static inline AABB2 gui_clipTo(AABB2 parent, AABB2 child) {
 #define GUI_TEXT_ALIGN_CENTER 0x02
 
 
-void gui_drawBox(GUIManager* gm, Vector2 tl, Vector2 sz, AABB2* clip, float z, Color4* color);
+void GUI_Box_(
+	GUIManager* gm, 
+	Vector2 tl, 
+	Vector2 sz, 
+	float width, 
+	Color4* borderColor
+);
+
+void GUI_BoxFilled_(
+	GUIManager* gm, 
+	Vector2 tl, 
+	Vector2 sz, 
+	float width, 
+	Color4* borderColor, 
+	Color4* bgColor
+);
+
+// no wrapping
+void GUI_TextLine_(
+	GUIManager* gm, 
+	char* text, 
+	size_t textLen, 
+	Vector2 tl, 
+	char* fontName, 
+	float size, 
+	Color4* color
+);
+
+
+
+
+void gui_drawBox(
+	GUIManager* gm, 
+	Vector2 tl, 
+	Vector2 sz, 
+	AABB2* clip, 
+	float z, 
+	Color4* color
+);
 
 void gui_drawBoxBorder(
 	GUIManager* gm, 
@@ -180,6 +218,39 @@ void gui_drawVCenteredTextLine(
 
 
 
+int GUI_MouseInside_(GUIManager* gm, Vector2 tl, Vector2 sz);
+int GUI_MouseWentUp(GUIManager* gm, int button);
+int GUI_MouseWentDown(GUIManager* gm, int button);
+
+// returns true if clicked
+int GUI_Button_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* text);
+
+void GUI_Box_(GUIManager* gm, Vector2 tl, Vector2 sz, float width, Color4* borderColor);
+
+void GUI_BoxFilled_(
+	GUIManager* gm, 
+	Vector2 tl, 
+	Vector2 sz, 
+	float width, 
+	Color4* borderColor, 
+	Color4* bgColor
+);
+
+	
+// no wrapping
+void GUI_TextLine_(
+	GUIManager* gm, 
+	char* text, 
+	size_t textLen, 
+	Vector2 tl, 
+	char* fontName, 
+	float size, 
+	Color4* color
+);
+
+int GUI_PointInBoxV_(GUIManager* gm, Vector2 tl, Vector2 size, Vector2 testPos);
+int GUI_PointInBox_(GUIManager* gm, AABB2 box, Vector2 testPos);
+
 
 
 
@@ -198,6 +269,7 @@ typedef struct GUIDrawContext {
 	
 	struct GUIDrawContext* parent;
 } GUIDrawContext;
+
 
 
 GUIDrawContext* GDC_New(GUIHeader* subject);

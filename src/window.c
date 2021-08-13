@@ -210,7 +210,7 @@ int initXWindow(XStuff* xs) {
 // 		| SelectionMask
 		;
 
-	xs->clientWin = XCreateWindow(xs->display, xs->rootWin, 0, 0, 700, 700, 0, xs->vi->depth, InputOutput, xs->vi->visual, CWColormap | CWEventMask, &setWinAttr);
+	xs->clientWin = XCreateWindow(xs->display, xs->rootWin, 0, 0, 600, 300, 0, xs->vi->depth, InputOutput, xs->vi->visual, CWColormap | CWEventMask, &setWinAttr);
 
 	XMapWindow(xs->display, xs->clientWin);
 	

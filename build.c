@@ -45,6 +45,7 @@ char* sources[] = {
 	"src/ui/gui.c",
 	"src/ui/gui_settings.c",
 	"src/ui/guiManager.c",
+	"src/ui/imgui.c",
 	"src/utilities.c",
 	"src/window.c",
 	NULL,
@@ -507,7 +508,11 @@ void mkdirp_cached(char* path, mode_t mode) {
 
 
 void compile_cache_execute() {
+	
+//	printf("compile cache length %d", compile_cache.len);
+
 	for(int i = 0; i < compile_cache.len; i++) {
+//		printf("%s\n", compile_cache.entries[i]);
 		system(compile_cache.entries[i]);
 		free(compile_cache.entries[i]);
 	}
@@ -517,7 +522,7 @@ void compile_cache_execute() {
 
 int compile_source(char* src_path, char* obj_path) {
 	char* cmd = sprintfdup("gcc -c -o %s %s %s", obj_path, src_path, g_gcc_opts_flat);
-	
+//	printf("%s\n", cmd);
 	strlist_push(&compile_cache, cmd);
 	
 	return 0;
@@ -1034,7 +1039,7 @@ char* resolve_path(char* in, time_t* mtime_out) {
 	
 	if(tmp_was_malloced) free(tmp);
 	
-	time_t t;
+	time_t t = 0;
 	if(out) {
 		// put it in the cache
 		t = realname_cache_add(in, out);
@@ -1042,8 +1047,8 @@ char* resolve_path(char* in, time_t* mtime_out) {
 	else {
 		// temporary
 		struct stat st;
-		lstat(in, &st);
-		t = st.st_mtim.tv_sec;
+		if(!lstat(in, &st))
+			t = st.st_mtim.tv_sec;
 	}
 	
 	if(mtime_out) *mtime_out = t;	

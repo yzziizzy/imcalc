@@ -780,6 +780,9 @@ void gui_drawVCenteredTextLine(
 
 
 
+GUIFont* GUI_FindFont(GUIManager* gm, char* name) {
+	return FontManager_findFont(gm->fm, name);
+}
 
 // 
 

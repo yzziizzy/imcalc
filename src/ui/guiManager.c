@@ -31,6 +31,10 @@ GUIManager* GUIManager_alloc(GUI_GlobalSettings* gs) {
 
 
 static void updatePosRoot(GUIHeader* gh, GUIRenderParams* always_null, PassFrameParams* pfp) {
+	
+	return;
+	
+	
 	GUIRenderParams grp = {
 		.size = gh->size,
 		.offset = {0,0},
@@ -44,7 +48,8 @@ static void updatePosRoot(GUIHeader* gh, GUIRenderParams* always_null, PassFrame
 }
 
 static void renderRoot(GUIHeader* gh, PassFrameParams* pfp) {
-	GUIHeader_renderChildren(gh, pfp);
+
+	//GUIHeader_renderChildren(gh, pfp);
 }
 
 
@@ -579,6 +584,13 @@ void GUIManager_HandleMouseClick(GUIManager* gm, InputState* is, InputEvent* iev
 		iev->intPos.x, iev->intPos.y
 	};
 	
+	if(iev->type == EVENT_MOUSEDOWN) {
+		gm->mouseWentDown = 1;
+	}
+	if(iev->type == EVENT_MOUSEUP) {
+		gm->mouseWentUp = 1;
+	}
+	
 	// find the deepest target
 	GUIHeader* t = GUIManager_hitTest(gm, newPos);
 	if(!t) return; // TODO handle mouse leaves;
@@ -999,11 +1011,14 @@ static int gui_elem_sort_fn(GUIUnifiedVertex* a, GUIUnifiedVertex* b) {
 static void preFrame(PassFrameParams* pfp, void* gm_) {
 	GUIManager* gm = (GUIManager*)gm_;
 	
+	
 	GUIUnifiedVertex* vmem = PCBuffer_beginWrite(&gm->instVB);
 	if(!vmem) {
 		printf("attempted to update invalid PCBuffer in GUIManager\n");
 		return;
 	}
+	
+	
 
 	double sort;
 	double time;
@@ -1023,24 +1038,107 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 		.clip = gm->root->absClip,
 	};
 	
-#define printf(...)
+//#define printf(...)
 	
 	GUIHeader_updatePos(gm->root, &grp, pfp);
 	time = timeSince(sort);
 	total += time;
-	printf("updatePos time: %fus\n", time  * 1000000.0);
+//	printf("updatePos time: %fus\n", time  * 1000000.0);
 	
 	sort = getCurrentTime();
 	
-	GUIHeader_render(gm->root, pfp);
+	//GUIHeader_render(gm->root, pfp);
+	
+	
+	
+	
+	
+	
+	// Rendering code
+	
+	static long acc = 0;
+	
+	
+	
+	gm->curClip = (AABB2){0,0, pfp->dp->targetSize.x, pfp->dp->targetSize.y};
+	gm->curZ = 1.0;
+	
+	
+//	GUI_BoxFilled_(gm, (Vector2){20,20}, (Vector2){200,20},
+//		 8, &((Color4){1.0,0,0,1.0}),
+//		&((Color4){0,1.0,0,1.0})
+//		);
+//	gm->curZ = 1.1;
+	
+//	GUI_Box_(gm, (Vector2){20,20}, (Vector2){20,20}, 8, &((Color4){0,1,1,1}));
+	
+	char* num = sprintfdup("%ld", acc);
+	GUI_TextLine_(gm, num, strlen(num), (Vector2){20,2}, "Arial", .5, &((Color4){1,1,1,1}));
+	free(num);
+	
+	float sz = 40;
+	float pad = 5;
+	float offx = 20;
+	float offy = 30;
+	
+	#define OFF(x, y) (Vector2){offx+sz*x+pad*x,offy+sz*y+pad*y}
+	
+	if(GUI_Button_(gm, 690007, OFF(0,0), (Vector2){sz,sz}, "7")) {
+		acc *= 10; acc += 7;
+	}
+	if(GUI_Button_(gm, 690008, OFF(1,0), (Vector2){sz,sz}, "8")) {
+		acc *= 10; acc += 8;
+	}
+	if(GUI_Button_(gm, 690009, OFF(2,0), (Vector2){sz,sz}, "9")) {
+		acc *= 10; acc += 9;
+	}
+	
+	if(GUI_Button_(gm, 690004, OFF(0,1), (Vector2){sz,sz}, "4")) {
+		acc *= 10; acc += 4;
+	}
+	if(GUI_Button_(gm, 690005, OFF(1,1), (Vector2){sz,sz}, "5")) {
+		acc *= 10; acc += 5;
+	}
+	if(GUI_Button_(gm, 690006, OFF(2,1), (Vector2){sz,sz}, "6")) {
+		acc *= 10; acc += 6;
+	}
+	
+	if(GUI_Button_(gm, 690001, OFF(0,2), (Vector2){sz,sz}, "1")) {
+		acc *= 10; acc += 1;
+	}
+	if(GUI_Button_(gm, 690002, OFF(1,2), (Vector2){sz,sz}, "2")) {
+		acc *= 10; acc += 2;
+	}
+	if(GUI_Button_(gm, 690003, OFF(2,2), (Vector2){sz,sz}, "3")) {
+		acc *= 10; acc += 3;
+	}
+	
+	if(GUI_Button_(gm, 690000, OFF(0,3), (Vector2){sz,sz}, "0")) {
+		acc *= 10;
+	}
+	if(GUI_Button_(gm, 690010, OFF(1,3), (Vector2){sz,sz}, ".")) {
+		
+	}
+	if(GUI_Button_(gm, 690020, OFF(2,3), (Vector2){sz,sz}, "(-)")) {
+		acc *= -1;
+	}
+	
+	
+	
+	gm->mouseWentUp = 0;
+	gm->mouseWentDown = 0;
+	gm->hotID = 0;
+	
+	
+	
 	time = timeSince(sort);
 	total += time;
-	printf("render time: %fus\n", time  * 1000000.0);
+//	printf("render time: %fus\n", time  * 1000000.0);
 
 	if(gm->useSoftCursor) {
 		TextureAtlasItem* it;
 		if(HT_get(&gm->ta->items, gm->softCursorName, &it)) {
-			printf("could not find gui image '%s'\n", name);
+			printf("could not find gui image '%s'\n", gm->softCursorName);
 		}
 		else { 
 			
@@ -1081,7 +1179,7 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	qsort(gm->elemBuffer, gm->elementCount, sizeof(*gm->elemBuffer), (void*)gui_elem_sort_fn);
  	time = timeSince(sort);
 	total += time;
-	printf("qsort time: %fus\n", time  * 1000000.0);
+//	printf("qsort time: %fus\n", time  * 1000000.0);
 	
 // 	gui_debugFileDumpVertexBuffer(gm, "/tmp/gpuedit/framedump", framecount);
 	
@@ -1092,15 +1190,14 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	memcpy(vmem, gm->elemBuffer, gm->elementCount * sizeof(*gm->elemBuffer));
 	 time = timeSince(sort);
 	total += time;
-	printf("memcpy time: %fus\n", time  * 1000000.0);
-	printf("total time: %fus\n", total  * 1000000.0);
+//	printf("memcpy time: %fus\n", time  * 1000000.0);
+//	printf("total time: %fus\n", total  * 1000000.0);
 #undef printf
 }
 
 static void draw(void* gm_, GLuint progID, PassDrawParams* pdp) {
 	GUIManager* gm = (GUIManager*)gm_;
 	size_t offset;
-	
 
 // 	if(mdi->uniformSetup) {
 // 		(*mdi->uniformSetup)(mdi->data, progID);
@@ -1183,15 +1280,6 @@ PassDrawable* GUIManager_CreateDrawable(GUIManager* gm) {
 
 
 
-
-GUIHeader* GUIManager_SpawnTemplate(GUIManager* gm, char* name) {
-	json_value_t* v;
-	
-	json_obj_get_key(gm->templates, name, &v);
-	if(!v) return NULL;
-	
-	return GUICL_CreateFromConfig(gm, v);
-}
 
 
 static void* gui_worker_thread_fn(void* _gm) {

@@ -10,8 +10,6 @@
 #include "gui_settings.h"
 #include "commands.h"
 
-struct GameState;
-typedef struct GameState GameState;
 
 struct GUIManager;
 typedef struct GUIManager GUIManager;
@@ -384,7 +382,21 @@ typedef struct GUIManager {
 	FontManager* fm;
 	TextureAtlas* ta;
 	
+	// immediate mode stuff
+	AABB2 curClip;
+	float curZ;
 	
+	int mouseWentUp;
+	int mouseWentDown;
+	
+	void* hotID;
+	void* activeID;
+	
+	// per-frame event queue
+	VEC(GUIEvent) events;
+	
+	
+	// ---------------
 	
 	void (*windowTitleSetFn)(void*, char*);
 	void* windowTitleSetData;
@@ -548,6 +560,10 @@ void GUIResize(GUIHeader* gh, Vector2 newSz);
 
 
 void guiTriggerClick(GUIEvent* e); 
+
+
+
+GUIFont* GUI_FindFont(GUIManager* gm, char* name);
 
 
 // USE THIS ONE. virtual function.

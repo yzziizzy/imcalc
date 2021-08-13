@@ -82,7 +82,7 @@ int main(int argc, char* argv[]) {
 	clearInputState(&input);
 		
 	xs.targetMSAA = 4;
-	xs.windowTitle = "gpuedit";
+	xs.windowTitle = "imcalc";
 	
 	// before the window is initialized
 	Clipboard_Init();
