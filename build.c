@@ -507,17 +507,18 @@ void mkdirp_cached(char* path, mode_t mode) {
 }
 
 
-void compile_cache_execute() {
-	
+int compile_cache_execute() {
+	int ret = 0;
 //	printf("compile cache length %d", compile_cache.len);
 
 	for(int i = 0; i < compile_cache.len; i++) {
 //		printf("%s\n", compile_cache.entries[i]);
-		system(compile_cache.entries[i]);
+		ret |= system(compile_cache.entries[i]);
 		free(compile_cache.entries[i]);
 	}
 	
 	compile_cache.len = 0;
+	return ret;
 }
 
 int compile_source(char* src_path, char* obj_path) {
@@ -676,7 +677,10 @@ int main(int argc, char* argv[]) {
 		check_source(sources[i], &objs);
 	}
 	
-	compile_cache_execute();
+	if(compile_cache_execute()) {
+		printf("Build halted due to errors.\n");
+		return 1;
+	}
 	
 	
 	char* objects_flat = join_str_list(objs.entries, " ");
