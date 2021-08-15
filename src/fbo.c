@@ -96,6 +96,8 @@ void initFBO(Framebuffer* fb, FBOConfig* cfg) {
 	// The depth buffer
 	for(i = 0; cfg[i].texture != 0; i++) {
 		GLenum att = cfg[i].attachment;
+	
+		//GL_COLOR_ATTACHMENT0
 		
 		glFramebufferTexture2D(GL_FRAMEBUFFER, att, GL_TEXTURE_2D, cfg[i].texture, 0);
 		if(att != GL_DEPTH_ATTACHMENT && att != GL_STENCIL_ATTACHMENT) {

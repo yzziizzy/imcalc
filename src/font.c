@@ -171,6 +171,144 @@ static void checkFTlib() {
 }
 
 
+void init_gpu_sdf(FontManager* fm) {
+	
+	glEnable(GL_TEXTURE_2D);
+	
+	// quad
+	float vertices[] = {
+		-1.0, -1.0, 0.0,
+		-1.0, 1.0, 0.0,
+		1.0, -1.0, 0.0,
+		1.0, 1.0, 0.0
+	};
+
+	glGenVertexArrays(1, &fm->gpu.vao);
+	glBindVertexArray(&fm->gpu.vao);
+	
+	glGenBuffers(1, &fm->gpu.vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, &fm->gpu.vbo);
+	
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, 0);
+
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+	
+
+	// framebuffer and backing textures
+	GLuint texid;
+	glGenTextures(1, &fm->gpu.fbTexID);
+
+	glBindTexture(GL_TEXTURE_2D, &fm->gpu.fbTexID);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	
+	glTexImage2D(
+		GL_TEXTURE_2D, 0, GL_RED, 
+		fm->maxRawSize.x, fm->maxRawSize.y, 
+		0, GL_RED, GL_UNSIGNED_BYTE, NULL
+	);
+	
+	
+	GLenum status;
+	
+	glGenFramebuffers(1, &fm->gpu.fbID);
+	glBindFramebuffer(GL_FRAMEBUFFER, &fm->gpu.fbID);
+	glexit("sdf fbo creation");
+	
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, &fm->gpu.fbTexID, 0);
+	glDrawBuffers(1, &fm->gpu.fbID);
+
+	status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	if(status != GL_FRAMEBUFFER_COMPLETE) {
+		printf("sdf fbo status invalid\n");
+		exit(1);
+	}
+	
+	
+	// shader
+	fm->gpu.shader = loadCombinedProgram("sdfGen");
+	glUseProgram(fm->gpu.shader);
+	glexit("shading prog");
+
+
+	// other properties
+	glActiveTexture(GL_TEXTURE0 + 0);
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_BLEND);
+	glDisable(GL_CULL_FACE);
+	
+	
+	// set to handle the largest texture
+	glViewport(0, 0, fm->maxRawSize.x, fm->maxRawSize.y);
+	
+	// everything left bound on purpose
+}
+
+void destroy_gpu_sdf(FontManager* fm) {
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glDeleteFramebuffers(1,  &fm->gpu.fbID);
+	glDeleteTextures(1,  &fm->gpu.fbTexID);
+	
+	glDeleteBuffers(1, &fm->gpu.vbo);
+	glDeleteVertexArrays(1, &fm->gpu.vao);
+}
+
+
+void CalcSDF_GPU(FontGen* fg) {
+	
+	glClear(GL_COLOR_BUFFER_BIT);
+	
+	// input data texture of raw glyph
+	GLuint rawID;
+	
+	glGenTextures(1, &rawID);
+	glBindTexture(GL_TEXTURE_2D, rawID);
+	
+	glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_FALSE);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	
+	
+	glTexImage2D(GL_TEXTURE_2D, // target
+		0,  // level, 0 = base, no minimap,
+		GL_RED, // internalformat
+		fg->rawGlyphSize.x,
+		fg->rawGlyphSize.y,
+		0,  // border
+		GL_R,  // format
+		GL_UNSIGNED_BYTE, // input type
+		fg->rawGlyph);
+	
+	
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	glexit("quad draw");
+		
+	// fetch the results. this call will flush the pipeline implicitly	
+	fg->sdfGlyph = malloc(fg->sdfGlyphSize.x * fg->sdfGlyphSize.y * sizeof(*fg->sdfGlyph));
+	void glReadPixels(0,0,	
+		fg->sdfGlyphSize.x,
+		fg->sdfGlyphSize.y,
+		GL_RED,
+		GL_UNSIGNED_BYTE,
+		fg->sdfGlyph
+	);
+	
+	glDeleteTextures(1, &rawID);
+	
+	
+}
+
+
+
 static float dist(int a, int b) {
 	return a*a + b*b;
 }
@@ -212,7 +350,7 @@ void CalcSDF_Software_(FontGen* fg) {
 	dw = fg->rawGlyphSize.x;
 	dh = fg->rawGlyphSize.y;
 	
-	// this is wrong
+	// this is wrong(?)
 	fg->sdfGlyphSize.x = floor(((float)(dw/* + (2*fg->magnitude)*/) / (float)(fg->oversample)) + .5);
 	fg->sdfGlyphSize.y = floor(((float)(dh/* + (2*fg->magnitude)*/) / (float)(fg->oversample)) + .5); 
 	
@@ -413,20 +551,36 @@ void* sdf_thread(void* _fm) {
 
 void FontManager_finalize(FontManager* fm) {
 	
-	int maxThreads = get_nprocs();
-	pthread_t threads[maxThreads];
 	
-	for(int i = 0; i < maxThreads; i++) {
-		int ret = pthread_create(&threads[i], NULL, sdf_thread, fm);
-		if(ret) {
-			printf("failed to spawn thread in FontManager\n");
-			exit(1);
+	if(0) { // cpu calculation
+		int maxThreads = get_nprocs();
+		pthread_t threads[maxThreads];
+		
+		for(int i = 0; i < maxThreads; i++) {
+			int ret = pthread_create(&threads[i], NULL, sdf_thread, fm);
+			if(ret) {
+				printf("failed to spawn thread in FontManager\n");
+				exit(1);
+			}
+		}
+		
+		// wait for the work to get done
+		for(int i = 0; i < maxThreads; i++) {
+			pthread_join(threads[i], NULL);
 		}
 	}
+	else {
+		// gpu calculation
+		
+		init_gpu_sdf(fm);	
 	
-	// wait for the work to get done
-	for(int i = 0; i < maxThreads; i++) {
-		pthread_join(threads[i], NULL);
+		VEC_EACH(&fm->gen, i, fg) {
+		
+			printf("gpucalc: '%s':%d:%d %c\n", fg->font->name, fg->bold, fg->italic, fg->code);
+			CalcSDF_GPU(fg);
+		}
+		
+		destroy_gpu_sdf(fm);
 	}
 }
 

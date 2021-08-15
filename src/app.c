@@ -39,10 +39,8 @@
 
 
 
-GLuint proj_ul, view_ul, model_ul;
 
 
-int g_DisableSave = 0; // debug flag to disable saving
 
 RenderPipeline* rpipe;
 
@@ -91,10 +89,6 @@ void initApp(XStuff* xs, AppState* as, int argc, char* argv[]) {
 	xs->onResize = resize_callback;
 	xs->onResizeData = as->gui;
 	decodeHexColorNorm(as->globalSettings.GUI_GlobalSettings->tabBorderColor, (float*)&(as->gui->defaults.tabBorderColor));
-	decodeHexColorNorm(as->globalSettings.GUI_GlobalSettings->tabActiveBgColor, (float*)&(as->gui->defaults.tabActiveBgColor));
-	decodeHexColorNorm(as->globalSettings.GUI_GlobalSettings->tabHoverBgColor, (float*)&(as->gui->defaults.tabHoverBgColor));
-	decodeHexColorNorm(as->globalSettings.GUI_GlobalSettings->tabBgColor, (float*)&(as->gui->defaults.tabBgColor));
-	decodeHexColorNorm(as->globalSettings.GUI_GlobalSettings->tabTextColor, (float*)&(as->gui->defaults.tabTextColor));
 	
 	as->gui->windowTitleSetFn = (void*)XStuff_SetWindowTitle;
 	as->gui->windowTitleSetData = xs;
@@ -102,19 +96,7 @@ void initApp(XStuff* xs, AppState* as, int argc, char* argv[]) {
 	as->gui->mouseCursorSetFn = (void*)XStuff_SetMouseCursor;
 	as->gui->mouseCursorSetData = xs;
 	
-	char* flag_names[] = {
-		"scrollToCursor",
-		"rehighlight",
-		"undoSeqBreak",
-		"hideMouse",
-		"centerOnCursor",
-		NULL,
-	};
-	
-	for(int i = 0; flag_names[i]; i++) 
-		GUIManager_AddCommandFlag(as->gui, flag_names[i]);
-	
-	
+
 	
 	
 	
@@ -123,10 +105,10 @@ void initApp(XStuff* xs, AppState* as, int argc, char* argv[]) {
 		char* a = argv[i];
 		
 		// for debugging
-		if(0 == strcmp(a, "--disable-save")) {
-			printf("Buffer saving disabled.\n");
-			g_DisableSave = 1;
-		}
+//		if(0 == strcmp(a, "--disable-save")) {
+//			printf("Buffer saving disabled.\n");
+//			g_DisableSave = 1;
+//		}
 		
 		
 	}

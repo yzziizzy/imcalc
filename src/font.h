@@ -118,6 +118,7 @@ typedef struct FontManager {
 	// SDF generation 
 	VEC(FontGen*) gen;
 	atomic_int genCounter;
+	Vector2 maxRawSize;
 	
 	// SDF config
 	int oversample;
@@ -127,6 +128,12 @@ typedef struct FontManager {
 	VEC(uint8_t*) atlas;
 	uint32_t atlasSize;
 	
+	struct {
+		GLuint vao, vbo;
+		GLuint fbTexID;
+		GLuint fbID;
+	
+	} gpu;
 	
 	// temp hacky stuff
 	GUIFont* helv;
