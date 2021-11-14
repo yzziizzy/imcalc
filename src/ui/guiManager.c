@@ -143,7 +143,7 @@ void GUIManager_init(GUIManager* gm, GUI_GlobalSettings* gs) {
 	
 	
 	gm->defaults.font = FontManager_findFont(gm->fm, "Arial");
-	gm->defaults.fontSize = .45;
+	gm->defaults.fontSize = 10;
 	decodeHexColorNorm(gs->textColor, (float*)&(gm->defaults.textColor));
 
 	decodeHexColorNorm(gs->buttonTextColor, (float*)&(gm->defaults.buttonTextColor));

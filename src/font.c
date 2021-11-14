@@ -22,24 +22,32 @@
 #include "font.h"
 
 
-
-
-
 static FT_Error (*_FT_Init_FreeType)(FT_Library *alibrary);
 static FT_Error (*_FT_Set_Pixel_Sizes)(FT_Face face, FT_UInt pixel_width, FT_UInt pixel_height);
 static FT_Error (*_FT_Load_Char)(FT_Face face, FT_ULong char_code, FT_Int32 load_flags);
 static FT_Error (*_FT_New_Face)(FT_Library library, const char* filepathname, FT_Long face_index, FT_Face *aface);
-
-
-
-
 
 // temp
 static void addFont(FontManager* fm, char* name);
 
 
 
+/*
 
+
+Magnitude is the distance in pixels for the distance field to be calculated
+   around the actual glyph. It is the width of the 'glow' in the sdf.
+
+Oversample is the ratio of the raw raster image size to the desired output sdf.
+
+
+
+
+
+
+
+
+*/
 
 
 FontManager* FontManager_alloc(GUI_GlobalSettings* gs) {
@@ -48,6 +56,7 @@ FontManager* FontManager_alloc(GUI_GlobalSettings* gs) {
 	pcalloc(fm);
 	HT_init(&fm->fonts, 4);
 	fm->oversample = 16;
+	fm->magnitude = 16 * 2;
 	fm->maxAtlasSize = 512;
 
 	FontManager_init(fm, gs);
@@ -74,7 +83,7 @@ void FontManager_init(FontManager* fm, GUI_GlobalSettings* gs) {
 	}
 
 
-	if(atlas_dirty) {
+	if(1 || atlas_dirty) {
 		i = 0;
 		while(gs->fontList[i] != NULL) {
 			// printf("building font: %s\n", gs->Buffer_fontList[i]);
@@ -110,7 +119,8 @@ GUIFont* FontManager_findFont(FontManager* fm, char* name) {
 
 
 // new font rendering info
-static char* defaultCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 `~!@#$%^&*()_+|-=\\{}[]:;<>?,./'\"";
+//static char* defaultCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 `~!@#$%^&*()_+|-=\\{}[]:;<>?,./'\"";
+static char* defaultCharset = "E";
 
 // 16.16 fixed point to float conversion
 static float f2f(int32_t i) {
@@ -173,38 +183,60 @@ static void checkFTlib() {
 
 void init_gpu_sdf(FontManager* fm) {
 	
-	glEnable(GL_TEXTURE_2D);
+	if(0 >= fm->maxRawSize.x * fm->maxRawSize.y) {
+		fprintf(stderr, "cannot generate font: zero raw size\n");
+		exit(1);
+	} 
+	
+	glexit("");
+//	glEnable(GL_TEXTURE_2D);
+//	glexit("");
 	
 	// quad
 	float vertices[] = {
-		-1.0, -1.0, 0.0,
-		-1.0, 1.0, 0.0,
-		1.0, -1.0, 0.0,
-		1.0, 1.0, 0.0
+		-1.0, -1.0,
+		-1.0, 1.0,
+		1.0, -1.0,
+		1.0, 1.0
 	};
-
+glexit("");
+	
 	glGenVertexArrays(1, &fm->gpu.vao);
-	glBindVertexArray(&fm->gpu.vao);
+	glexit("");
+	glBindVertexArray(fm->gpu.vao);
+	
+	glexit("");
 	
 	glGenBuffers(1, &fm->gpu.vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, &fm->gpu.vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, fm->gpu.vbo);
 	
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, 0);
-
+	glexit("");
+	
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, 0);
+glexit("");
+	
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+	glexit("");
 	
 
 	// framebuffer and backing textures
 	GLuint texid;
 	glGenTextures(1, &fm->gpu.fbTexID);
 
-	glBindTexture(GL_TEXTURE_2D, &fm->gpu.fbTexID);
-
+	glBindTexture(GL_TEXTURE_2D, fm->gpu.fbTexID);
+glexit("");
+	
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glexit("");
+	
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glexit("");
+	
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glexit("");
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glexit("");
 	
 	glTexImage2D(
 		GL_TEXTURE_2D, 0, GL_RED, 
@@ -212,16 +244,26 @@ void init_gpu_sdf(FontManager* fm) {
 		0, GL_RED, GL_UNSIGNED_BYTE, NULL
 	);
 	
+	printf("fbo size: %f, %f\n",
+		fm->maxRawSize.x, fm->maxRawSize.y);
+	
+	glBindTexture(GL_TEXTURE_2D, 0);
 	
 	GLenum status;
 	
 	glGenFramebuffers(1, &fm->gpu.fbID);
-	glBindFramebuffer(GL_FRAMEBUFFER, &fm->gpu.fbID);
+	glBindFramebuffer(GL_FRAMEBUFFER, fm->gpu.fbID);
 	glexit("sdf fbo creation");
 	
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, &fm->gpu.fbTexID, 0);
-	glDrawBuffers(1, &fm->gpu.fbID);
-
+	
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fm->gpu.fbTexID, 0);
+	glexit("");
+	
+	GLenum db = GL_COLOR_ATTACHMENT0;
+	glDrawBuffers(1, &db);
+	
+glexit("");
+	
 	status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 	if(status != GL_FRAMEBUFFER_COMPLETE) {
 		printf("sdf fbo status invalid\n");
@@ -231,23 +273,26 @@ void init_gpu_sdf(FontManager* fm) {
 	
 	// shader
 	fm->gpu.shader = loadCombinedProgram("sdfGen");
-	glUseProgram(fm->gpu.shader);
+	glUseProgram(fm->gpu.shader->id);
 	glexit("shading prog");
 
+glexit("");
+	glUniform1f(glGetUniformLocation(fm->gpu.shader->id, "searchSize"), fm->magnitude);
+	glUniform1f(glGetUniformLocation(fm->gpu.shader->id, "oversample"), fm->oversample);
 
 	// other properties
 	glActiveTexture(GL_TEXTURE0 + 0);
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
+glexit(""); 
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 	glDisable(GL_CULL_FACE);
-	
+	glexit("");
 	
 	// set to handle the largest texture
 	glViewport(0, 0, fm->maxRawSize.x, fm->maxRawSize.y);
-	
+	glexit("");
 	// everything left bound on purpose
 }
 
@@ -261,22 +306,29 @@ void destroy_gpu_sdf(FontManager* fm) {
 }
 
 
-void CalcSDF_GPU(FontGen* fg) {
+void CalcSDF_GPU(FontManager* fm, FontGen* fg) {
 	
 	glClear(GL_COLOR_BUFFER_BIT);
-	
+	glexit("");
 	// input data texture of raw glyph
 	GLuint rawID;
+	glexit("");
 	
 	glGenTextures(1, &rawID);
 	glBindTexture(GL_TEXTURE_2D, rawID);
+	glexit("");
 	
-	glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_FALSE);
+	//glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_FALSE);
+	glexit("");
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glexit("");
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glexit("");
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glexit("");
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	
+	glexit("");
 	
 	glTexImage2D(GL_TEXTURE_2D, // target
 		0,  // level, 0 = base, no minimap,
@@ -284,23 +336,41 @@ void CalcSDF_GPU(FontGen* fg) {
 		fg->rawGlyphSize.x,
 		fg->rawGlyphSize.y,
 		0,  // border
-		GL_R,  // format
+		GL_RED,  // format
 		GL_UNSIGNED_BYTE, // input type
 		fg->rawGlyph);
 	
+	glexit("");
+	
+		
+	glUniform2iv(glGetUniformLocation(fm->gpu.shader->id, "outSize"), 1, (int*)&fg->sdfGlyphSize);
 	
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	glexit("quad draw");
-		
+	
 	// fetch the results. this call will flush the pipeline implicitly	
 	fg->sdfGlyph = malloc(fg->sdfGlyphSize.x * fg->sdfGlyphSize.y * sizeof(*fg->sdfGlyph));
-	void glReadPixels(0,0,	
+	glBindBuffer( GL_PIXEL_PACK_BUFFER, 0);
+	glReadPixels(0,0,	
 		fg->sdfGlyphSize.x,
 		fg->sdfGlyphSize.y,
 		GL_RED,
 		GL_UNSIGNED_BYTE,
 		fg->sdfGlyph
 	);
+	
+	printf("code: %d, sz: %d,%d\n", fg->code, fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
+	
+	{
+		static char buf[200];
+		sprintf(buf, "raw-test-%d.png", fg->code);
+		writePNG(buf, 1, fg->rawGlyph, fg->rawGlyphSize.x, fg->rawGlyphSize.y);
+	}
+	{
+		static char buf[200];
+		sprintf(buf, "sdf-test-%d.png", fg->code);
+		writePNG(buf, 1, fg->sdfGlyph, fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
+	}
 	
 	glDeleteTextures(1, &rawID);
 	
@@ -458,7 +528,7 @@ static FontGen* addChar(FontManager* fm, FT_Face* ff, int code, int fontSize, ch
 	fg->italic = italic;
 	fg->bold = bold;
 	fg->oversample = fm->oversample;
-	fg->magnitude = 8;
+	fg->magnitude = fm->magnitude;
 	
 	int rawSize = fontSize * fm->oversample;
 	
@@ -491,6 +561,9 @@ static FontGen* addChar(FontManager* fm, FT_Face* ff, int code, int fontSize, ch
 	fg->rawGlyphSize.x = (slot->metrics.width >> 6) + (fg->oversample * fg->magnitude); 
 	fg->rawGlyphSize.y = (slot->metrics.height >> 6) + (fg->oversample * fg->magnitude); 
 	
+	fm->maxRawSize.x = MAX(fm->maxRawSize.x, fg->rawGlyphSize.x);
+	fm->maxRawSize.y = MAX(fm->maxRawSize.y, fg->rawGlyphSize.y);
+	
 	// the raw glyph is copied to the middle of a larger buffer to make the sdf algorithm simpler 
 	fg->rawGlyph = calloc(1, sizeof(*fg->rawGlyph) * fg->rawGlyphSize.x * fg->rawGlyphSize.y);
 	
@@ -501,6 +574,13 @@ static FontGen* addChar(FontManager* fm, FT_Face* ff, int code, int fontSize, ch
 		slot->bitmap.pitch, fg->rawGlyphSize.x, // src and dst row widths
 		slot->bitmap.buffer, // source
 		fg->rawGlyph); // destination
+	
+	int dw = fg->rawGlyphSize.x;
+	int dh = fg->rawGlyphSize.y;
+	
+	fg->sdfGlyphSize.x = floor(((float)dw / (float)fg->oversample) + .5) + (2*fg->magnitude);
+	fg->sdfGlyphSize.y = floor(((float)dh / (float)fg->oversample) + .5) + (2*fg->magnitude); 
+	
 	
 	/*
 	/// TODO move to multithreaded pass
@@ -577,7 +657,7 @@ void FontManager_finalize(FontManager* fm) {
 		VEC_EACH(&fm->gen, i, fg) {
 		
 			printf("gpucalc: '%s':%d:%d %c\n", fg->font->name, fg->bold, fg->italic, fg->code);
-			CalcSDF_GPU(fg);
+			CalcSDF_GPU(fm, fg);
 		}
 		
 		destroy_gpu_sdf(fm);
@@ -680,7 +760,7 @@ void FontManager_createAtlas(FontManager* fm) {
 	
 	int totalWidth = 0;
 	VEC_EACH(&fm->gen, ind, gen) {
-		printf("%c: h: %d, w: %d \n", gen->code, gen->sdfDataSize.y, gen->sdfDataSize.x);
+//		printf("%c: h: %d, w: %d \n", gen->code, gen->sdfDataSize.y, gen->sdfDataSize.x);
 		totalWidth += gen->sdfDataSize.x;
 	}
 	
@@ -721,8 +801,9 @@ void FontManager_createAtlas(FontManager* fm) {
 			if(hext + prevhext > pot) { 
 				VEC_PUSH(&fm->atlas, texData);
 				
-				sprintf(buf, "sdf-comp-%ld.png", VEC_LEN(&fm->atlas));
-				writePNG(buf, 1, texData, pot, pot);
+				// disabled for debug
+				//sprintf(buf, "sdf-comp-%ld.png", VEC_LEN(&fm->atlas));
+				//writePNG(buf, 1, texData, pot, pot);
 				
 				
 				texData = malloc(sizeof(*texData) * pot * pot);
@@ -782,8 +863,9 @@ void FontManager_createAtlas(FontManager* fm) {
 	
 	VEC_PUSH(&fm->atlas, texData);
 	
-	sprintf(buf, "sdf-comp-%ld.png", VEC_LEN(&fm->atlas));
-	writePNG(buf, 1, texData, pot, pot);
+	// disabled for debugging
+	//sprintf(buf, "sdf-comp-%ld.png", VEC_LEN(&fm->atlas));
+	//writePNG(buf, 1, texData, pot, pot);
 	
 	VEC_FREE(&fm->gen);
 	

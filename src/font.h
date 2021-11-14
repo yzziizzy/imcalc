@@ -4,6 +4,7 @@
 #include <stdatomic.h>
 
 #include "common_math.h"
+#include "shader.h"
 #include "sti/sti.h"
 
 #include "settings.h"
@@ -85,8 +86,10 @@ typedef struct FontGen {
 	
 	
 	// the raw glyph is oversampled by FontManager.oversample times
-	int oversample;
-	int magnitude;
+	int oversample; // this is how many times larger the raster glyph is
+	                //   rendered compared to the desired sdf output size.
+	int magnitude; // this is the search range of the sdf algorithm,
+	               //   measured in oversampled pixels
 	
 	// metrics for the raw glyph, in pixels
 	uint8_t* rawGlyph;
@@ -132,7 +135,7 @@ typedef struct FontManager {
 		GLuint vao, vbo;
 		GLuint fbTexID;
 		GLuint fbID;
-	
+		ShaderProgram* shader;	
 	} gpu;
 	
 	// temp hacky stuff
