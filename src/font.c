@@ -55,8 +55,8 @@ FontManager* FontManager_alloc(GUI_GlobalSettings* gs) {
 	
 	pcalloc(fm);
 	HT_init(&fm->fonts, 4);
-	fm->oversample = 16;
-	fm->magnitude = 16 * 2;
+	fm->oversample = 4;
+	fm->magnitude = 4 * 8;
 	fm->maxAtlasSize = 512;
 
 	FontManager_init(fm, gs);
@@ -68,7 +68,7 @@ FontManager* FontManager_alloc(GUI_GlobalSettings* gs) {
 void FontManager_init(FontManager* fm, GUI_GlobalSettings* gs) {
 	int i = 0;
 	int atlas_dirty = 0;
-	char* atlas_path = "/usr/share/gpuedit/fonts.atlas";
+	char* atlas_path = "./fonts.atlas";
 	GUIFont* font;
 
 	FontManager_loadAtlas(fm, atlas_path);
@@ -279,7 +279,8 @@ glexit("");
 glexit("");
 	glUniform1f(glGetUniformLocation(fm->gpu.shader->id, "searchSize"), fm->magnitude);
 	glUniform1f(glGetUniformLocation(fm->gpu.shader->id, "oversample"), fm->oversample);
-
+	printf("searchSize/mag: %d, oversample: %d\n", fm->magnitude, fm->oversample);
+	
 	// other properties
 	glActiveTexture(GL_TEXTURE0 + 0);
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
@@ -344,6 +345,7 @@ void CalcSDF_GPU(FontManager* fm, FontGen* fg) {
 	
 		
 	glUniform2iv(glGetUniformLocation(fm->gpu.shader->id, "outSize"), 1, (int*)&fg->sdfGlyphSize);
+	printf("outSize: %d,%d\n", fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
 	
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	glexit("quad draw");
@@ -578,8 +580,8 @@ static FontGen* addChar(FontManager* fm, FT_Face* ff, int code, int fontSize, ch
 	int dw = fg->rawGlyphSize.x;
 	int dh = fg->rawGlyphSize.y;
 	
-	fg->sdfGlyphSize.x = floor(((float)dw / (float)fg->oversample) + .5) + (2*fg->magnitude);
-	fg->sdfGlyphSize.y = floor(((float)dh / (float)fg->oversample) + .5) + (2*fg->magnitude); 
+	fg->sdfGlyphSize.x = floor(((float)dw / (float)fg->oversample) + .5);
+	fg->sdfGlyphSize.y = floor(((float)dh / (float)fg->oversample) + .5); 
 	
 	
 	/*
