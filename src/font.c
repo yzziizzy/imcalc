@@ -56,7 +56,7 @@ FontManager* FontManager_alloc(GUI_GlobalSettings* gs) {
 	pcalloc(fm);
 	HT_init(&fm->fonts, 4);
 	fm->oversample = 4;
-	fm->magnitude = 4 * 8;
+	fm->magnitude = 4 * 16;
 	fm->maxAtlasSize = 512;
 
 	FontManager_init(fm, gs);
@@ -87,7 +87,7 @@ void FontManager_init(FontManager* fm, GUI_GlobalSettings* gs) {
 		i = 0;
 		while(gs->fontList[i] != NULL) {
 			// printf("building font: %s\n", gs->Buffer_fontList[i]);
-			FontManager_addFont(fm, gs->fontList[i]);
+			FontManager_addFont(fm, gs->fontList[i], 16);
 			i++;
 		}
 		FontManager_finalize(fm);
@@ -120,7 +120,8 @@ GUIFont* FontManager_findFont(FontManager* fm, char* name) {
 
 // new font rendering info
 //static char* defaultCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 `~!@#$%^&*()_+|-=\\{}[]:;<>?,./'\"";
-static char* defaultCharset = "E";
+//static char* defaultCharset = "Q";
+static char* defaultCharset = "0123456789.+-()";
 
 // 16.16 fixed point to float conversion
 static float f2f(int32_t i) {
@@ -363,6 +364,7 @@ void CalcSDF_GPU(FontManager* fm, FontGen* fg) {
 	
 	printf("code: %d, sz: %d,%d\n", fg->code, fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
 	
+	
 	{
 		static char buf[200];
 		sprintf(buf, "raw-test-%d.png", fg->code);
@@ -376,6 +378,60 @@ void CalcSDF_GPU(FontManager* fm, FontGen* fg) {
 	
 	glDeleteTextures(1, &rawID);
 	
+	int x, y;
+	
+	// find the bounds of the sdf data
+	// first rows
+	for(y = 0; y < fg->sdfGlyphSize.y; y++) {
+		int hasData = 0;
+		for(x = 0; x < fg->sdfGlyphSize.x; x++) {
+			hasData += fg->sdfGlyph[x + (y * fg->sdfGlyphSize.x)];
+		}
+		
+		if(hasData / fg->sdfGlyphSize.x < 255) {
+			fg->sdfBounds.min.y = y;
+			break;
+		}
+	}
+	for(y = fg->sdfGlyphSize.y - 1; y >= 0; y--) {
+		int hasData = 0;
+		for(x = 0; x < fg->sdfGlyphSize.x; x++) {
+			hasData += fg->sdfGlyph[x + (y * fg->sdfGlyphSize.x)];
+		}
+		
+		if(hasData / fg->sdfGlyphSize.x < 255) {
+			fg->sdfBounds.max.y = y + 1;
+			break;
+		}
+	}
+
+	for(x = 0; x < fg->sdfGlyphSize.x; x++) {
+		int hasData = 0;
+		for(y = 0; y < fg->sdfGlyphSize.y; y++) {
+			hasData += fg->sdfGlyph[x + (y * fg->sdfGlyphSize.x)];
+		}
+		
+		if(hasData / fg->sdfGlyphSize.y < 255) {
+			fg->sdfBounds.min.x = x;
+			break;
+		}
+	}
+	for(x = fg->sdfGlyphSize.x - 1; x >= 0; x++) {
+		int hasData = 0;
+		for(y = 0; y < fg->sdfGlyphSize.y; y++) {
+			hasData += fg->sdfGlyph[x + (y * fg->sdfGlyphSize.x)];
+		}
+		
+		if(hasData / fg->sdfGlyphSize.y < 255) {
+			fg->sdfBounds.max.x = x + 1;
+			break;
+		}
+	}
+	
+	fg->sdfDataSize.x = fg->sdfBounds.max.x - fg->sdfBounds.min.x;
+	fg->sdfDataSize.y = fg->sdfBounds.max.y - fg->sdfBounds.min.y;
+	
+	free(fg->rawGlyph);
 	
 }
 
@@ -699,7 +755,7 @@ GUIFont* GUIFont_alloc(char* name) {
 
 
 
-void FontManager_addFont2(FontManager* fm, char* name, char bold, char italic) {
+void FontManager_addFont2(FontManager* fm, char* name, char bold, char italic, int genSize) {
 	GUIFont* f;
 	FT_Error err;
 	FT_Face fontFace;
@@ -708,7 +764,7 @@ void FontManager_addFont2(FontManager* fm, char* name, char bold, char italic) {
 	
 	int len = strlen(defaultCharset);
 	
-	int fontSize = 32; // pixels
+	//int fontSize = 32; // pixels
 	
 	checkFTlib();
 	
@@ -737,7 +793,7 @@ void FontManager_addFont2(FontManager* fm, char* name, char bold, char italic) {
 	
 	for(int i = 0; i < len; i++) {
 // 		printf("calc: '%s':%d:%d %c\n", name, bold, italic, defaultCharset[i]);
-		FontGen* fg = addChar(fm, &fontFace, defaultCharset[i], fontSize, bold, italic);
+		FontGen* fg = addChar(fm, &fontFace, defaultCharset[i], genSize, bold, italic);
 		fg->font = f;
 		
 		VEC_PUSH(&fm->gen, fg);
@@ -747,8 +803,8 @@ void FontManager_addFont2(FontManager* fm, char* name, char bold, char italic) {
 
 }
 
-void FontManager_addFont(FontManager* fm, char* name) {
-	FontManager_addFont2(fm, name, 0, 0);
+void FontManager_addFont(FontManager* fm, char* name, int genSize) {
+	FontManager_addFont2(fm, name, 0, 0, genSize);
 // 	FontManager_addFont2(fm, name, 1, 0); // DEBUG: temporarily disabled for testing metrics
 // 	FontManager_addFont2(fm, name, 0, 1);
 // 	FontManager_addFont2(fm, name, 1, 1);

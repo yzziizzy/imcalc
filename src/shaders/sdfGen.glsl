@@ -71,8 +71,6 @@ float sdfEncode(float d, float inside, float maxDist) {
 
 
 
-
-
 void main(void) {
 	
 	ivec2 center = ivec2(ivec2(gl_FragCoord.xy) * oversample) + ivec2(searchSize, searchSize);
@@ -85,14 +83,29 @@ void main(void) {
 	float d = 99999999.99;
 	
 	ivec2 tp;
-	for(tp.y = -int(searchSize); tp.y < int(searchSize); tp.y++) {
-		for(tp.x = -int(searchSize); tp.x < int(searchSize); tp.x++) {
+	for(tp.y = center.y - int(searchSize); tp.y < center.y + int(searchSize); tp.y+=2) {
+		for(tp.x = center.x - int(searchSize); tp.x < center.x + int(searchSize); tp.x+=2) {
 			
-			float samp = texelFetch(rawTex, center + tp, 0).r;
 			
-			if(samp != v) {
-				d = min(dot(tp, tp), d);
+			
+			float s1 = texelFetch(rawTex, tp, 0).r;
+			if(s1 != v) {
+				ivec2 a = tp - center;
+				d = min(dot(a, a), d);
 			}
+			
+			#define check(off) \
+			{ \
+			float s2 = texelFetchOffset(rawTex, tp, 0, off).r; \
+			if(s2 != v) { \
+				ivec2 a = tp - center + off; \
+				d = min(dot(a, a), d); \
+			}}
+			
+			check(ivec2(0,1))
+			check(ivec2(1,0))
+			check(ivec2(1,1))
+
 		}
 	}
 	

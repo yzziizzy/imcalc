@@ -302,7 +302,8 @@ void main(void) {
 		}
 		d = 1 - d;
 
-		a = smoothstep(0.35, 0.9, abs(d));
+//		a = smoothstep(0.35, 0.9, abs(d));
+		a = smoothstep(0.6, 0.65, abs(d));
 // 		a = step(0.65, abs(d));
 		
 		if(a < 0.01) {

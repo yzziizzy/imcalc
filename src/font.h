@@ -147,8 +147,8 @@ typedef struct FontManager {
 void FontManager_createAtlas(FontManager* fm);
 void FontManager_saveAtlas(FontManager* fm, char* path);
 int FontManager_loadAtlas(FontManager* fm, char* path);
-void FontManager_addFont(FontManager* fm, char* name);
-void FontManager_addFont2(FontManager* fm, char* name, char bold, char italic);
+void FontManager_addFont(FontManager* fm, char* name, int genSize);
+void FontManager_addFont2(FontManager* fm, char* name, char bold, char italic, int genSize);
 void FontManager_finalize(FontManager* fm);
 
 GUIFont* FontManager_findFont(FontManager* fm, char* name);

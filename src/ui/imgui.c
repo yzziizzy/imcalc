@@ -39,7 +39,7 @@ int GUI_Button_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* text) {
 	}
 	
 	gm->curZ += 0.01;
-	GUI_TextLine_(gm, text, strlen(text), tl, "Arial", .5, C(.8,.8,.8));
+	GUI_TextLine_(gm, text, strlen(text), tl, "Arial", 2, C(.8,.8,.8));
 	gm->curZ -= 0.01;
 	
 	return result;
