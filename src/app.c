@@ -55,14 +55,14 @@ void setupFBOs(AppState* as, int resized);
 
 void resize_callback(XStuff* xs, void* gm_) {
 	GUIManager* gm = (GUIManager*)gm_;
-	
+	/*
 	GUIEvent gev = {
 		.type = GUIEVENT_ParentResize,
 		.size = {.x = xs->winSize.x, .y = xs->winSize.y},
 		.originalTarget = gm->root,
 	};
 	
-	GUIHeader_TriggerEvent(gm->root, &gev);
+	GUIHeader_TriggerEvent(gm->root, &gev);*/
 }
 
 static struct child_process_info* cc;
@@ -456,9 +456,9 @@ void appLoop(XStuff* xs, AppState* as, InputState* is) {
 		as->perfTimes.draw = as->lastFrameDrawTime;
 	
 	
-		PERF(now = getCurrentTime());
-		GUIManager_Reap(as->gui);
-		PERF(printf("GUIManager_Reap: %fus\n", timeSince(now) * 1000000));
+//		PERF(now = getCurrentTime());
+//		GUIManager_Reap(as->gui);
+//		PERF(printf("GUIManager_Reap: %fus\n", timeSince(now) * 1000000));
 	}
 }
 

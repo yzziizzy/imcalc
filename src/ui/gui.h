@@ -8,32 +8,11 @@
 #include "../gui_deps.h"
 
 #include "gui_settings.h"
-#include "commands.h"
+//#include "commands.h"
 
 
 struct GUIManager;
 typedef struct GUIManager GUIManager;
-
-
-
-#define GUI_GRAV_TOP_LEFT      0x00
-#define GUI_GRAV_LEFT_TOP      0x00
-#define GUI_GRAV_CENTER_LEFT   0x01
-#define GUI_GRAV_LEFT_CENTER   0x01
-#define GUI_GRAV_BOTTOM_LEFT   0x02
-#define GUI_GRAV_LEFT_BOTTOM   0x02
-#define GUI_GRAV_CENTER_BOTTOM 0x03
-#define GUI_GRAV_BOTTOM_CENTER 0x03
-#define GUI_GRAV_BOTTOM_RIGHT  0x04
-#define GUI_GRAV_RIGHT_BOTTOM  0x04
-#define GUI_GRAV_CENTER_RIGHT  0x05
-#define GUI_GRAV_RIGHT_CENTER  0x05
-#define GUI_GRAV_TOP_RIGHT     0x06
-#define GUI_GRAV_RIGHT_TOP     0x06
-#define GUI_GRAV_CENTER_TOP    0x07
-#define GUI_GRAV_TOP_CENTER    0x07
-#define GUI_GRAV_CENTER        0x08
-#define GUI_GRAV_CENTER_CENTER 0x08
 
 
 typedef struct Color4 {
@@ -87,39 +66,16 @@ typedef struct GUIUnifiedVertex {
 
 #define GUI_AABB2_TO_SHADER(c) ((struct ShaderBox){.l = (c).min.x, .t = (c).min.y, .r = (c).max.x, .b = (c).max.y})
 
-struct GUIHeader;
-typedef struct GUIHeader GUIHeader;
 struct GUIManager;
 
 struct GUIRenderParams;
 typedef struct GUIRenderParams GUIRenderParams;
 
 
-struct gui_vtbl {
-	void (*UpdatePos)(GUIHeader* go, GUIRenderParams* grp, PassFrameParams* pfp);
-	void (*Render)(GUIHeader* go, PassFrameParams* pfp);
-	void (*Delete)(GUIHeader* go);
-	void (*Reap)(GUIHeader* go);
-	void (*Resize)(GUIHeader* go, Vector2 newSz); // exterior size
-	Vector2 (*GetClientSize)(GUIHeader* go);
-	void    (*SetClientSize)(GUIHeader* go, Vector2 cSize); // and force exterior size to match
-	Vector2 (*RecalcClientSize)(GUIHeader* go); // recalc client size from the client children and call SetClientSize
-	GUIHeader* (*HitTest)(GUIHeader* go, Vector2 testPos);
-	GUIHeader* (*FindChild)(GUIHeader* h, char* name);
-	int (*ChooseCursor)(GUIHeader* h, Vector2 testPos);
-	
-	void (*AddClient)(GUIHeader* parent, GUIHeader* child);
-	void (*RemoveClient)(GUIHeader* parent, GUIHeader* child);
-	Vector2 (*SetScrollPct)(GUIHeader* go, Vector2 pct); // returns the final value
-	Vector2 (*SetScrollAbs)(GUIHeader* go, Vector2 absPos);
-	
-	int (*HandleCommand)(GUIHeader* h, GUI_Cmd* cmd);
-};
-
 
 struct GUIEvent;
 typedef struct GUIEvent GUIEvent;
-typedef void (*GUI_EventHandlerFn)(GUIHeader*, GUIEvent*);
+
 
 // bubbling: 0=none, just the target
 //           1=rise until cancelled
@@ -171,12 +127,6 @@ enum GUIEventType_Bit {
 #undef X
 };
 
-struct GUIEventHandler_vtbl {
-#define X(name, b) GUI_EventHandlerFn name;
-	GUIEEVENTTYPE_LIST
-#undef X
-};
-
 static char GUIEventBubbleBehavior[] = {
 	#define X(name, bubble) [GUIEVENT_##name] = bubble,
 		GUIEEVENTTYPE_LIST
@@ -207,9 +157,7 @@ typedef struct GUIEvent {
 	
 	double eventTime;
 	Vector2 eventPos;
-	GUIHeader* originalTarget;
-	GUIHeader* currentTarget;
-	
+
 	union {
 		Vector2 pos; // for mouse events; absolute position
 		Vector2 size; // for window size
@@ -234,9 +182,6 @@ typedef struct GUIEvent {
 } GUIEvent;
 
 
-typedef int  (*GUI_OnClickFn)(GUIHeader* go, Vector2 clickPos);
-typedef void (*GUI_OnMouseEnterFn)(GUIEvent* e);
-typedef void (*GUI_OnMouseLeaveFn)(GUIEvent* e);
 
 
 #define GUIMOUSECURSOR_DYNAMIC   -1
@@ -255,101 +200,6 @@ typedef void (*GUI_OnMouseLeaveFn)(GUIEvent* e);
 
 
 
-struct GUIHeader {
-	struct GUIManager* gm;
-	GUIHeader* parent;
-	struct gui_vtbl* vt;
-	struct GUIEventHandler_vtbl* event_vt;
-	
-	VEC(struct {
-		enum GUIEventType type;
-		GUI_EventHandlerFn cb;
-	}) dynamicHandlers;
-	
-	char* name; // used by config loader atm
-
-	// fallback for easy hit testing
-	VEC(GUIHeader*) children;
-	
-	Vector2 topleft; // relative to parent (and window padding)
-	Vector2 size; // absolute
-	float scale;
-	float alpha;
-	float z; // relative to the parent
-	
-	// calculated absolute coordinates of the top left corner
-	// updated every frame before any rendering or hit testing
-	Vector2 absTopLeft; 
-	// calculated tl coords relative to the parent, factoring in gravity and GRP parent offset
-	Vector2 relTopLeft; 
-	// calculated absolute clipping box. this element may be entirely clipped.
-	AABB2 absClip;
-	// calculated absolute z index
-	float absZ;
-	
-	
-	unsigned int flags;
-	unsigned int gravity   :  8;
-	unsigned int hidden    :  1;
-	unsigned int deleted   :  1;
-	unsigned int hadEvents :  1;
-	
-	uint16_t cmdElementType; // which category of commands this element should respond to
-	uint16_t cmdMode;
-		
-	int cursor;
-	int tabStop; // the tab stop of this element within its parent hierarchy
-	
-	// data about tabbing among children of this element
-	int currentTabStop;
-	VEC(GUIHeader*) tabStopCache;
-	
-};
-
-
-
-
-// Animations
-
-
-/*
-// GUI elements
-#include "window.h"
-#include "text.h"
-#include "textf.h"
-#include "button.h"
-#include "scrollWindow.h"
-#include "simpleWindow.h"
-#include "image.h"
-#include "imgButton.h"
-#include "tree.h"
-#include "edit.h"
-#include "list.h"
-#include "selectBox.h"
-#include "slider.h"
-#include "columnLayout.h"
-#include "gridLayout.h"
-#include "tabBar.h"
-#include "tabControl.h"
-#include "formControl.h"
-#include "monitors.h"
-#include "debugAdjuster.h"
-#include "structAdjuster.h"
-#include "performanceGraph.h"
-#include "fileViewer.h"
-*/
-
-typedef void (*GUI_WorkerFn)(GUIHeader* caller, void* data, float* pctComplete);
-
-typedef struct GUIWorkerJob { 
-	GUIHeader* owner;
-	GUI_WorkerFn fn;
-	void* data;
-	float pctCompleteHint;
-	atomic_flag done;
-	
-	struct GUIWorkerJob* next;
-} GUIWorkerJob;
 
 /*
 The general idea is this:
@@ -369,15 +219,6 @@ typedef struct GUIManager {
 	GUIUnifiedVertex* elemBuffer;
 	
 	Vector2i screenSize;
-	
-	GUIHeader* root;
-	VEC(GUIHeader*) reapQueue; 
-	
-	pthread_t workerThread;
-	sem_t workerWhip; // the worker thread waits on this
-	pthread_mutex_t workerQueueMutex;
-	GUIWorkerJob* workerQueueHead;
-	GUIWorkerJob* workerQueueTail;
 	
 	FontManager* fm;
 	TextureAtlas* ta;
@@ -406,7 +247,6 @@ typedef struct GUIManager {
 	
 	// input 
 	Vector2 lastMousePos;
-	GUIHeader* lastHoveredObject;
 	char mouseIsOutOfWindow;
 	
 	char isDragging;
@@ -414,7 +254,6 @@ typedef struct GUIManager {
 	int dragButton;
 	Vector2 dragStartPos;
 	float dragStartTime;
-	GUIHeader* dragStartTarget;
 	float minDragDist;
 	
 	struct {
@@ -430,20 +269,6 @@ typedef struct GUIManager {
 	char useSoftCursor;
 	char* softCursorName;
 	Vector2 softCursorSize;
-	
-	RING(GUIHeader*) focusStack;
-
-	
-	char nextCmdFlagBit;
-	VEC(GUI_CmdElementInfo) cmdElements;
-	HT(int) cmdElementLookup;
-	HT(uint16_t) cmdModeLookup;
-//	HT(uint32_t) cmdNameLookup;
-	HT(uint32_t) cmdFlagLookup;
-	
-	VEC(GUI_Cmd) cmdList; // temporary, until a struct-keyed hash table is added to sti
-	VEC(GUI_Cmd) cmdListSubElems; // temporary, until a struct-keyed hash table is added to sti
-	
 		
 	struct {
 		GUIFont* font;
@@ -506,8 +331,6 @@ typedef struct GUIManager {
 	} defaults;
 	
 	
-	json_value_t* templates;
-	
 	// temp 
 	GLuint fontAtlasID;
 	GLuint atlasID;
@@ -518,10 +341,6 @@ typedef struct GUIManager {
 	
 } GUIManager;
 
-
-typedef union {
-	GUIHeader header;
-} GUIObject;
 
 
 void GUIManager_init(GUIManager* gm, GUI_GlobalSettings* gs);
@@ -538,138 +357,25 @@ void GUIManager_SetCursor(GUIManager* gm, int cursor);
 
 
 void GUIManager_updatePos(GUIManager* gm, PassFrameParams* pfp);
-void GUIManager_Reap(GUIManager* gm);
 
-
-GUIHeader* GUIHeader_hitTest(GUIHeader* go, Vector2 testPos);
-GUIHeader* GUIManager_hitTest(GUIManager* gm, Vector2 testPos);
-// 
-// void GUIHeader_triggerClick(GUIHeader* go, GUIEvent* e); 
-void GUIHeader_triggerClick(GUIHeader* go, Vector2 testPos);
-GUIHeader* GUIManager_triggerClick(GUIManager* gm, Vector2 testPos);
-
-
-// focus stack
-GUIHeader* GUIManager_getFocusedObject(GUIManager* gm);
-//#define GUIManager_pushFocusedObject(gm, o) GUIManager_pushFocusedObject_(gm, &(o)->header)
-void GUIManager_pushFocusedObject(GUIManager* gm, GUIHeader* h);
-GUIHeader* GUIManager_popFocusedObject(GUIManager* gm);
-
-
-void GUIResize(GUIHeader* gh, Vector2 newSz);
-
-
-void guiTriggerClick(GUIEvent* e); 
 
 
 
 GUIFont* GUI_FindFont(GUIManager* gm, char* name);
 
 
-// USE THIS ONE. virtual function.
-#define GUI_AddClient(p, o) GUIHeader_AddClient((p) ? &((p)->header) : NULL, &(o)->header)
-void GUIHeader_AddClient(GUIHeader* parent, GUIHeader* o);
-
-#define GUI_RemoveClient(p, o) GUIHeader_RemoveClient((p) ? &((p)->header) : NULL, &(o)->header)
-void GUIHeader_RemoveClient(GUIHeader* parent, GUIHeader* o);
 
 
-// NOT this one. direct child addition
-#define GUI_RegisterObject(p, o) GUIHeader_RegisterObject((p) ? &(p)->header : NULL, &(o)->header)
-void GUIHeader_RegisterObject(GUIHeader* parent, GUIHeader* o);
-
-#define GUI_UnregisterObject(o) GUIHeader_UnregisterObject(&(o)->header)
-void GUIHeader_UnregisterObject(GUIHeader* o);
-
-
-
-// Delete marks things to be reaped later. It removes objects from the root tree.
-#define GUI_Delete(o) GUIHeader_Delete(&(o)->header)
-void GUIHeader_Delete(GUIHeader* h);
-
-// Reap is for garbage collection. 
-// It happens at a separate phase and does not depend on object relations. 
-#define GUI_Reap(o) GUIHeader_Reap(&(o)->header)
-void GUIHeader_Reap(GUIHeader* h);
-
-/*#define GUI_AddClient(p, c) GUIHeader_AddClient_(&(p)->header, &(c)->header)
-void GUIHeader_AddClient_(GUIHeader* parent, GUIHeader* client);
-
-#define GUI_RemoveClient(p, c) GUIHeader_RemoveClient_(&(p)->header, &(c)->header)
-void GUIHeader_RemoveClient_(GUIHeader* parent, GUIHeader* client);
-*/
-
-#define GUI_SetScrollPct(o, pct) GUIHeader_SetScrollPct(&(o)->header, pct)
-Vector2 GUIHeader_SetScrollPct(GUIHeader* go, Vector2 pct);
-
-#define GUI_SetScrollAbs(o, abs) GUIHeader_SetScrollAbs(&(o)->header, abs)
-Vector2 GUIHeader_SetScrollAbs(GUIHeader* go, Vector2 absPos);
-
-#define GUI_FindChild(p, n) GUIHeader_FindChild((p) ? &((p)->header) : NULL, n)
-GUIHeader* GUIHeader_FindChild(GUIHeader* obj, char* name);
-
-int GUIHeader_ChooseCursor(GUIHeader* obj, Vector2 testPos);
-
-
-
-/*
-NOTE:
-These functions are for temporal, dynamic event handlers that must be added
-and removed at run time.
-
-They are NOT for general event handling in GUI elements. Use the vtable for that.
-*/
-#define GUI_AddHandler(o, t, c) GUIHeader_AddHandler(&(o)->header, t, c)
-void GUIHeader_AddHandler(GUIHeader* h, enum GUIEventType type, GUI_EventHandlerFn cb);
-
-#define GUI_RemoveHandler(o, t, c) GUIHeader_RemoveHandler(&(o)->header, t, c)
-void GUIHeader_RemoveHandler(GUIHeader* h, enum GUIEventType type, GUI_EventHandlerFn cb);
-
-
-
-// USE THIS ONE to send an event into the system.
-// gev can be allocated on the stack.
-void GUIManager_BubbleEvent(GUIManager* gm, GUIHeader* target, GUIEvent* gev);
-void GUIManager_BubbleUserEvent(GUIManager* gm, GUIHeader* target, char* ev);
-
-// TriggerEvent DOES NOT BUBBLE. It only calls the virtual functions on the object.
-// gev can be allocated on the stack.
-void GUIManager_TriggerEvent(GUIManager* o, GUIEvent* gev);
-#define GUI_TriggerEvent(o, gev) GUIHeader_TriggerEvent(&(o)->header, gev)
-void GUIHeader_TriggerEvent(GUIHeader* o, GUIEvent* gev);
-
-void GUIHeader_RegenTabStopCache(GUIHeader* parent);
-
-#define GUI_NextTabStop(o) GUIHeader_NextTabStop(&((o)->header));
-GUIHeader* GUIHeader_NextTabStop(GUIHeader* h);
 
 void GUIManager_HandleMouseMove(GUIManager* gm, InputState* is, InputEvent* iev);
 void GUIManager_HandleMouseClick(GUIManager* gm, InputState* is, InputEvent* iev);
 void GUIManager_HandleKeyInput(GUIManager* gm, InputState* is, InputEvent* iev);
-
-GUIHeader* GUIManager_SpawnTemplate(GUIManager* gm, char* name);
-
-
-int GUIManager_DestroyModal(GUIManager* gm);
-int GUIManager_SpawnModal(GUIManager* gm, GUIHeader* obj);
-
-
-void guiSetClientSize(GUIHeader* go, Vector2 cSize);
-Vector2 guiGetClientSize(GUIHeader* go);
-Vector2 guiRecalcClientSize(GUIHeader* go);
-
-
-// returns a pointer to the status float;
-float* GUIManager_EnqueueJob(GUIManager* gm, GUIHeader* owner, GUI_WorkerFn fn, void* data);
-GUIWorkerJob* GUIManager_PopJob(GUIManager* gm);
-void GUIManager_StartWorkerThread(GUIManager* gm);
 
 
 // debugging
 void gui_debugFileDumpVertexBuffer(GUIManager* gm, char* filePrefix, int fileNum);
 
 
-#include "configLoader.h"
 
 
 

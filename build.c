@@ -41,7 +41,6 @@ char* sources[] = {
 	"src/sti/sti.c",
 	"src/texture.c",
 	"src/textureAtlas.c",
-	"src/ui/commands.c",
 	"src/ui/gui.c",
 	"src/ui/gui_settings.c",
 	"src/ui/guiManager.c",

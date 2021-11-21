@@ -92,7 +92,6 @@ typedef struct AppState {
 	} queries;
 
 	
-	GUI_Cmd* commands;
 	
 	
 } AppState;
