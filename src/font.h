@@ -86,10 +86,8 @@ typedef struct FontGen {
 	
 	
 	// the raw glyph is oversampled by FontManager.oversample times
-	int oversample; // this is how many times larger the raster glyph is
-	                //   rendered compared to the desired sdf output size.
 	int magnitude; // this is the search range of the sdf algorithm,
-	               //   measured in oversampled pixels
+	               //   measured in pixels
 	
 	// metrics for the raw glyph, in pixels
 	uint8_t* rawGlyph;
@@ -124,19 +122,12 @@ typedef struct FontManager {
 	Vector2 maxRawSize;
 	
 	// SDF config
-	int oversample;
 	int magnitude;
 	
 	int maxAtlasSize;
 	VEC(uint8_t*) atlas;
 	uint32_t atlasSize;
 	
-	struct {
-		GLuint vao, vbo;
-		GLuint fbTexID;
-		GLuint fbID;
-		ShaderProgram* shader;	
-	} gpu;
 	
 	// temp hacky stuff
 	GUIFont* helv;

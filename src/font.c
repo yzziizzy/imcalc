@@ -27,6 +27,10 @@ static FT_Error (*_FT_Set_Pixel_Sizes)(FT_Face face, FT_UInt pixel_width, FT_UIn
 static FT_Error (*_FT_Load_Char)(FT_Face face, FT_ULong char_code, FT_Int32 load_flags);
 static FT_Error (*_FT_New_Face)(FT_Library library, const char* filepathname, FT_Long face_index, FT_Face *aface);
 
+
+static FontGen* addChar(int magnitude, FT_Face* ff, int code, int fontSize, char bold, char italic);
+
+
 // temp
 static void addFont(FontManager* fm, char* name);
 
@@ -55,8 +59,7 @@ FontManager* FontManager_alloc(GUI_GlobalSettings* gs) {
 	
 	pcalloc(fm);
 	HT_init(&fm->fonts, 4);
-	fm->oversample = 4;
-	fm->magnitude = 4 * 16;
+	fm->magnitude = 8;
 	fm->maxAtlasSize = 512;
 
 	FontManager_init(fm, gs);
@@ -182,17 +185,74 @@ static void checkFTlib() {
 }
 
 
-void init_gpu_sdf(FontManager* fm) {
+typedef struct fb_info {
+	GLuint fbi_id, tex_id;
+} fb_info;
+
+typedef struct quad_info {
+	GLuint vao, vbo;
+} quad_info;
+
+
+typedef struct {
+	GLuint vao, vbo;
+	GLuint fb_tex_id;
+	GLuint fb_id;
+	ShaderProgram* shader;	
+} gpu_calc_info;
+
+
+// returns fbo name 
+// leaves the new framebuffer bound
+void mk_fbo(fb_info* fb, int size_x, int size_y, GLuint format, GLuint fmt_width) {
+
+	GLenum status;
+	GLuint fbid;
+	GLuint texid;
 	
-	if(0 >= fm->maxRawSize.x * fm->maxRawSize.y) {
-		fprintf(stderr, "cannot generate font: zero raw size\n");
-		exit(1);
-	} 
+	// backing texture	
+	glGenTextures(1, &texid);
+	glBindTexture(GL_TEXTURE_2D, texid);
 	
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	
+	// allocate storage
+	glTexImage2D(
+		GL_TEXTURE_2D, 0, format, 
+		size_x, size_y, 
+		0, format, fmt_width, NULL
+	);
+	
+	
+	// the fbo itself
+	glGenFramebuffers(1, &fbid);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbid);
+	glexit("sdf fbo creation");
+	
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texid, 0);
 	glexit("");
-//	glEnable(GL_TEXTURE_2D);
-//	glexit("");
 	
+	GLenum db = GL_COLOR_ATTACHMENT0;
+	glDrawBuffers(1, &db);
+	glexit("");
+	
+	status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	if(status != GL_FRAMEBUFFER_COMPLETE) {
+		printf("fbo status invalid\n");
+		exit(1);
+	}
+	
+	fb->fb_id = fbid;
+	fb->tex_id = texid;
+}
+
+void mk_quad(&quad_info) {
+
+	glexit("");
+
 	// quad
 	float vertices[] = {
 		-1.0, -1.0,
@@ -200,115 +260,80 @@ void init_gpu_sdf(FontManager* fm) {
 		1.0, -1.0,
 		1.0, 1.0
 	};
-glexit("");
 	
-	glGenVertexArrays(1, &fm->gpu.vao);
-	glexit("");
-	glBindVertexArray(fm->gpu.vao);
-	
+	glGenVertexArrays(1, &gpu->vao);
+	glBindVertexArray(gpu->vao);
 	glexit("");
 	
-	glGenBuffers(1, &fm->gpu.vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, fm->gpu.vbo);
+	glGenBuffers(1, &gpu->vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, gpu->vbo);
 	
 	glEnableVertexAttribArray(0);
 	glexit("");
 	
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, 0);
-glexit("");
+	glexit("");
 	
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 	glexit("");
-	
+}
 
-	// framebuffer and backing textures
-	GLuint texid;
-	glGenTextures(1, &fm->gpu.fbTexID);
 
-	glBindTexture(GL_TEXTURE_2D, fm->gpu.fbTexID);
-glexit("");
+void init_gpu_sdf(gpu_calc_info* gpu, int magnitude, int sz_x, int sz_y) {
 	
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glexit("");
-	
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glexit("");
-	
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glexit("");
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glexit("");
-	
-	glTexImage2D(
-		GL_TEXTURE_2D, 0, GL_RED, 
-		fm->maxRawSize.x, fm->maxRawSize.y, 
-		0, GL_RED, GL_UNSIGNED_BYTE, NULL
-	);
-	
-	printf("fbo size: %f, %f\n",
-		fm->maxRawSize.x, fm->maxRawSize.y);
-	
-	glBindTexture(GL_TEXTURE_2D, 0);
-	
-	GLenum status;
-	
-	glGenFramebuffers(1, &fm->gpu.fbID);
-	glBindFramebuffer(GL_FRAMEBUFFER, fm->gpu.fbID);
-	glexit("sdf fbo creation");
-	
-	
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fm->gpu.fbTexID, 0);
-	glexit("");
-	
-	GLenum db = GL_COLOR_ATTACHMENT0;
-	glDrawBuffers(1, &db);
-	
-glexit("");
-	
-	status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-	if(status != GL_FRAMEBUFFER_COMPLETE) {
-		printf("sdf fbo status invalid\n");
+	if(0 >= sz_x * sz_y) {
+		fprintf(stderr, "cannot generate font: zero raw size\n");
 		exit(1);
-	}
+	} 
 	
+	glexit("");
+
+	quad_info qd;
+	mk_quad(&qd);
+	gpu->vao = qd.vao;
+	gpu->vbo = qb.vbo;
+	
+	fb_info fb;
+	mk_fbo(&fb, sz_x, sz_y, GL_RED, GL_UNSIGNED_BYTE);
+	gpu->fb_id = fb.fbid;
+	gpu->fb_tex_id = fb.texid;
 	
 	// shader
-	fm->gpu.shader = loadCombinedProgram("sdfGen");
-	glUseProgram(fm->gpu.shader->id);
+	gpu->shader = loadCombinedProgram("sdfGen");
+	glUseProgram(gpu->shader->id);
 	glexit("shading prog");
 
-glexit("");
-	glUniform1f(glGetUniformLocation(fm->gpu.shader->id, "searchSize"), fm->magnitude);
-	glUniform1f(glGetUniformLocation(fm->gpu.shader->id, "oversample"), fm->oversample);
-	printf("searchSize/mag: %d, oversample: %d\n", fm->magnitude, fm->oversample);
+	glexit("");
+	glUniform1f(glGetUniformLocation(gpu->shader->id, "searchSize"), magnitude);
+	printf("searchSize/mag: %d\n", magnitude);
 	
 	// other properties
 	glActiveTexture(GL_TEXTURE0 + 0);
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-glexit(""); 
+	glexit(""); 
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 	glDisable(GL_CULL_FACE);
 	glexit("");
 	
 	// set to handle the largest texture
-	glViewport(0, 0, fm->maxRawSize.x, fm->maxRawSize.y);
+	glViewport(0, 0, sz_x, sz_y);
 	glexit("");
 	// everything left bound on purpose
 }
 
-void destroy_gpu_sdf(FontManager* fm) {
+void destroy_gpu_sdf(gpu_calc_info* gpu) {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glDeleteFramebuffers(1,  &fm->gpu.fbID);
-	glDeleteTextures(1,  &fm->gpu.fbTexID);
+	glDeleteFramebuffers(1,  &gpu->fb_id);
+	glDeleteTextures(1,  &gpu->fb_tex_id);
 	
-	glDeleteBuffers(1, &fm->gpu.vbo);
-	glDeleteVertexArrays(1, &fm->gpu.vao);
+	glDeleteBuffers(1, &gpu->vbo);
+	glDeleteVertexArrays(1, &gpu->vao);
 }
 
 
-void CalcSDF_GPU(FontManager* fm, FontGen* fg) {
+void CalcSDF_GPU(gpu_calc_info* gpu, FontGen* fg) {
 	
 	glClear(GL_COLOR_BUFFER_BIT);
 	glexit("");
@@ -318,18 +343,11 @@ void CalcSDF_GPU(FontManager* fm, FontGen* fg) {
 	
 	glGenTextures(1, &rawID);
 	glBindTexture(GL_TEXTURE_2D, rawID);
-	glexit("");
 	
-	//glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_FALSE);
-	glexit("");
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glexit("");
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glexit("");
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glexit("");
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	
 	glexit("");
 	
 	glTexImage2D(GL_TEXTURE_2D, // target
@@ -345,7 +363,7 @@ void CalcSDF_GPU(FontManager* fm, FontGen* fg) {
 	glexit("");
 	
 		
-	glUniform2iv(glGetUniformLocation(fm->gpu.shader->id, "outSize"), 1, (int*)&fg->sdfGlyphSize);
+	glUniform2iv(glGetUniformLocation(gpu->shader->id, "outSize"), 1, (int*)&fg->sdfGlyphSize);
 	printf("outSize: %d,%d\n", fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
 	
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -364,7 +382,7 @@ void CalcSDF_GPU(FontManager* fm, FontGen* fg) {
 	
 	printf("code: %d, sz: %d,%d\n", fg->code, fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
 	
-	
+	/*
 	{
 		static char buf[200];
 		sprintf(buf, "raw-test-%d.png", fg->code);
@@ -375,6 +393,7 @@ void CalcSDF_GPU(FontManager* fm, FontGen* fg) {
 		sprintf(buf, "sdf-test-%d.png", fg->code);
 		writePNG(buf, 1, fg->sdfGlyph, fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
 	}
+	*/
 	
 	glDeleteTextures(1, &rawID);
 	
@@ -437,6 +456,173 @@ void CalcSDF_GPU(FontManager* fm, FontGen* fg) {
 
 
 
+
+void gen_sdf_test_samples(char* fontName, int code) {
+	
+				
+	checkFTlib();
+	
+	Shader* test_shader = loadCombinedProgram("sdfTest");
+	
+	quad_info qd;
+	mk_quad(&qd);			
+	
+	for(int size = 8; size <= 32; size += 4) {
+		for(int bold = 0; bold <= 1; bold++) {
+			for(int italic = 0; italic <= 1; italic++) {
+		
+				FT_Error err;
+				FT_Face fontFace;
+				
+				char* fontPath = getFontFile2(fontName, bold, italic);
+				if(!fontPath) {
+					fprintf(stderr, "Could not load font '%s'\n", fontName);
+					return;
+				}
+				printf("font path: %s: %s\n", fontName, fontPath);
+				
+				err = _FT_New_Face(ftLib, fontPath, 0, &fontFace);
+				if(err) {
+					fprintf(stderr, "Could not access font '%s' at '%s'.\n", fontName, fontPath);
+					return;
+				}
+				
+			//	f->ascender = fontFace->ascender >> 6;
+			//	f->descender = fontFace->descender >> 6;
+			//	f->height = fontFace->height >> 6;
+				
+				
+				for(int magnitude = 2; magnitude < 8; magnitude += 2) {
+					
+					//
+					// generate the single sdf image
+					//
+			
+					gpu_calc_info gpu;
+					
+					
+	//     		 printf("calc: '%s':%d:%d %c\n", name, bold, italic, defaultCharset[i]);
+	//	  		gensize is the desired native font size 
+					FontGen* fg = addChar(magnitude , &fontFace, code, size, bold, italic);
+					//fg->font = f;
+					
+						
+					init_gpu_sdf(&gpu, magnitude, fg->rawGlyphSize.x, fg->rawGlyphSize.y);
+					
+					printf("gpucalc: '%s':%d:%d %c\n", fg->font->name, fg->bold, fg->italic, fg->code);
+					CalcSDF_GPU(&gpu, fg);
+					
+					{
+						static char buf[200];
+						sprintf(buf, "sdf-test-%d.png", fg->code);
+						writePNG(buf, 1, fg->sdfGlyph, fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
+					}
+					
+					destroy_gpu_sdf(&gpu);
+					
+					
+					//
+					// render some samples
+					//
+					
+					// load the trimmed sdf texture
+					GLuint rawID;
+					glexit("");
+					
+					glGenTextures(1, &rawID);
+					glBindTexture(GL_TEXTURE_2D, rawID);
+					
+					glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+					glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+					glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+					glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+					glexit("");
+					
+					glTexImage2D(GL_TEXTURE_2D, // target
+						0,  // level, 0 = base, no minimap,
+						GL_RED, // internalformat
+						fg->rawGlyphSize.x,
+						fg->rawGlyphSize.y,
+						0,  // border
+						GL_RED,  // format
+						GL_UNSIGNED_BYTE, // input type
+						fg->rawGlyph);
+	
+					
+					for(int sampleSize = 8; sampleSize <= 20; sampleSize += 2) {
+						for(int useSmooth = 0; useSmooth <= 1; useSmooth++) {
+							for(float stepLow = 0.1; stepLow <= 1.0; stepLow += 0.1) {
+								for(float stepHigh = 0.1; stepHigh <= 1.0; stepHigh += 0.1) {
+						
+									// the fbo
+									fb_info fb;
+									mk_fbo(&fb, sz_x, sz_y, GL_RED, GL_UNSIGNED_BYTE);
+									
+									// the shader
+									glUseProgram(test_shader->id);
+									glexit("test shading prog");
+									
+									// the quad
+									glBindVertexArray(qd.vao);
+									glBindBuffer(GL_ARRAY_BUFFER, qd.vbo);
+									glEnableVertexAttribArray(0);
+									glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, 0);
+									glexit("");
+									
+									glClear(GL_COLOR_BUFFER_BIT);
+									glexit("");
+									
+								
+									
+									
+									glUniform2iv(glGetUniformLocation(gpu->shader->id, "outSize"), 1, (int*)&fg->sdfGlyphSize);
+									printf("outSize: %d,%d\n", fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
+									
+									glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+									glexit("quad draw");
+									
+									// fetch the results. this call will flush the pipeline implicitly	
+									fg->sdfGlyph = malloc(fg->sdfGlyphSize.x * fg->sdfGlyphSize.y * sizeof(*fg->sdfGlyph));
+									glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+									glReadPixels(0,0,	
+										fg->sdfGlyphSize.x,
+										fg->sdfGlyphSize.y,
+										GL_RED,
+										GL_UNSIGNED_BYTE,
+										fg->sdfGlyph
+									);
+											
+					
+									{
+										static char buf[200];
+										sprintf(buf, "sdf-sample-%d.png", fg->code);
+										writePNG(buf, 1, fg->sdfGlyph, fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
+									}
+					
+								} // stepHigh
+							} // stepLow
+						} // useSmooth
+					} // sampleSize
+							
+							
+				} // magnitude
+			} // italic
+		} // bold
+	} // size
+	
+}
+
+
+
+
+
+
+
+
+
+
+
+
 static float dist(int a, int b) {
 	return a*a + b*b;
 }
@@ -473,28 +659,28 @@ void CalcSDF_Software_(FontGen* fg) {
 	
 	float d, maxDist;
 	
-	searchSize = fg->oversample * fg->magnitude;
+	searchSize = fg->magnitude;
 	maxDist = 0.5 * searchSize;
 	dw = fg->rawGlyphSize.x;
 	dh = fg->rawGlyphSize.y;
 	
 	// this is wrong(?)
-	fg->sdfGlyphSize.x = floor(((float)(dw/* + (2*fg->magnitude)*/) / (float)(fg->oversample)) + .5);
-	fg->sdfGlyphSize.y = floor(((float)(dh/* + (2*fg->magnitude)*/) / (float)(fg->oversample)) + .5); 
+	fg->sdfGlyphSize.x = dw;//floor(((float)(dw/* + (2*fg->magnitude)*/) / (float)()) + .5);
+	fg->sdfGlyphSize.y = dh;//floor(((float)(dh/* + (2*fg->magnitude)*/) / (float)(fg->oversample)) + .5); 
 	
 	fg->sdfGlyph = output = malloc(fg->sdfGlyphSize.x * fg->sdfGlyphSize.y * sizeof(uint8_t));
 	input = fg->rawGlyph;
 	
 	fg->sdfBounds.min.x = 0;
-	fg->sdfBounds.max.y =  fg->sdfGlyphSize.y;
+	fg->sdfBounds.max.y = fg->sdfGlyphSize.y;
 	fg->sdfBounds.max.x = fg->sdfGlyphSize.x; 
 	fg->sdfBounds.min.y = 0;
 	
 	// calculate the sdf 
 	for(y = 0; y < fg->sdfGlyphSize.y; y++) {
 		for(x = 0; x < fg->sdfGlyphSize.x; x++) {
-			int sx = x * fg->oversample;
-			int sy = y * fg->oversample;
+			int sx = x;
+			int sy = y;
 			//printf(".");
 			// value right under the center of the pixel, to determine if we are inside
 			// or outside the glyph
@@ -576,7 +762,7 @@ void CalcSDF_Software_(FontGen* fg) {
 
 
 
-static FontGen* addChar(FontManager* fm, FT_Face* ff, int code, int fontSize, char bold, char italic) {
+static FontGen* addChar(int magnitude, FT_Face* ff, int code, int fontSize, char bold, char italic) {
 	FontGen* fg;
 	FT_Error err;
 	FT_GlyphSlot slot;
@@ -585,15 +771,14 @@ static FontGen* addChar(FontManager* fm, FT_Face* ff, int code, int fontSize, ch
 	fg->code = code;
 	fg->italic = italic;
 	fg->bold = bold;
-	fg->oversample = fm->oversample;
-	fg->magnitude = fm->magnitude;
+	fg->magnitude = magnitude;
 	
-	int rawSize = fontSize * fm->oversample;
+//	int rawSize = fontSize * fm->oversample;
 	
 	
-	err = _FT_Set_Pixel_Sizes(*ff, 0, rawSize);
+	err = _FT_Set_Pixel_Sizes(*ff, 0, fontSize);
 	if(err) {
-		fprintf(stderr, "Could not set pixel size to %dpx.\n", rawSize);
+		fprintf(stderr, "Could not set pixel size to %dpx.\n", fontSize);
 		free(fg);
 		return NULL;
 	}
@@ -616,18 +801,15 @@ static FontGen* addChar(FontManager* fm, FT_Face* ff, int code, int fontSize, ch
 	// back to sdf generation
 	Vector2i rawImgSz = {(slot->metrics.width >> 6), (slot->metrics.height >> 6)};
 	
-	fg->rawGlyphSize.x = (slot->metrics.width >> 6) + (fg->oversample * fg->magnitude); 
-	fg->rawGlyphSize.y = (slot->metrics.height >> 6) + (fg->oversample * fg->magnitude); 
-	
-	fm->maxRawSize.x = MAX(fm->maxRawSize.x, fg->rawGlyphSize.x);
-	fm->maxRawSize.y = MAX(fm->maxRawSize.y, fg->rawGlyphSize.y);
+	fg->rawGlyphSize.x = (slot->metrics.width >> 6) + (fg->magnitude); 
+	fg->rawGlyphSize.y = (slot->metrics.height >> 6) + (fg->magnitude); 
 	
 	// the raw glyph is copied to the middle of a larger buffer to make the sdf algorithm simpler 
 	fg->rawGlyph = calloc(1, sizeof(*fg->rawGlyph) * fg->rawGlyphSize.x * fg->rawGlyphSize.y);
 	
 	blit(
 		0, 0, // src x and y offset for the image
-		 (fg->oversample * fg->magnitude * .5), (fg->oversample * fg->magnitude * .5), // dst offset
+		 (fg->magnitude * .5), (fg->magnitude * .5), // dst offset
 		rawImgSz.x, rawImgSz.y, // width and height
 		slot->bitmap.pitch, fg->rawGlyphSize.x, // src and dst row widths
 		slot->bitmap.buffer, // source
@@ -636,8 +818,8 @@ static FontGen* addChar(FontManager* fm, FT_Face* ff, int code, int fontSize, ch
 	int dw = fg->rawGlyphSize.x;
 	int dh = fg->rawGlyphSize.y;
 	
-	fg->sdfGlyphSize.x = floor(((float)dw / (float)fg->oversample) + .5);
-	fg->sdfGlyphSize.y = floor(((float)dh / (float)fg->oversample) + .5); 
+	fg->sdfGlyphSize.x = dw;//floor(((float)dw / (float)fg->oversample) + .5);
+	fg->sdfGlyphSize.y = dh;//floor(((float)dh / (float)fg->oversample) + .5); 
 	
 	
 	/*
@@ -710,15 +892,17 @@ void FontManager_finalize(FontManager* fm) {
 	else {
 		// gpu calculation
 		
-		init_gpu_sdf(fm);	
+		gpu_calc_info gpu;
+		
+		init_gpu_sdf(&gpu, fm->magnitude, fm->maxRawSize.x, fm->maxRawSize.y);	
 	
 		VEC_EACH(&fm->gen, i, fg) {
 		
 			printf("gpucalc: '%s':%d:%d %c\n", fg->font->name, fg->bold, fg->italic, fg->code);
-			CalcSDF_GPU(fm, fg);
+			CalcSDF_GPU(&gpu, fg);
 		}
 		
-		destroy_gpu_sdf(fm);
+		destroy_gpu_sdf(&gpu);
 	}
 }
 
@@ -789,12 +973,15 @@ void FontManager_addFont2(FontManager* fm, char* name, char bold, char italic, i
 	
 	f->ascender = fontFace->ascender >> 6;
 	f->descender = fontFace->descender >> 6;
-	f->height= fontFace->height >> 6;
+	f->height = fontFace->height >> 6;
 	
 	for(int i = 0; i < len; i++) {
 // 		printf("calc: '%s':%d:%d %c\n", name, bold, italic, defaultCharset[i]);
-		FontGen* fg = addChar(fm, &fontFace, defaultCharset[i], genSize, bold, italic);
+		FontGen* fg = addChar(fm->magnitude, &fontFace, defaultCharset[i], genSize, bold, italic);
 		fg->font = f;
+		
+		fm->maxRawSize.x = MAX(fm->maxRawSize.x, fg->rawGlyphSize.x);
+		fm->maxRawSize.y = MAX(fm->maxRawSize.y, fg->rawGlyphSize.y);
 		
 		VEC_PUSH(&fm->gen, fg);
 	}
@@ -899,9 +1086,9 @@ void FontManager_createAtlas(FontManager* fm) {
 		c->texNormSize.y = (float)gen->sdfDataSize.y / (float)pot;
 		
 		// BUG: wrong? needs magnitude?
-		c->advance = gen->rawAdvance / (float)gen->oversample;
-		c->topLeftOffset.x = (gen->rawBearing.x / (float)gen->oversample);// + (float)gen->sdfBounds.min.x;
-		c->topLeftOffset.y = (gen->rawBearing.y / (float)gen->oversample);// - (float)gen->sdfBounds.min.y;
+		c->advance = gen->rawAdvance;
+		c->topLeftOffset.x = (gen->rawBearing.x);// + (float)gen->sdfBounds.min.x;
+		c->topLeftOffset.y = (gen->rawBearing.y);// - (float)gen->sdfBounds.min.y;
 		
 		c->size.x = gen->sdfDataSize.x;
 		c->size.y = gen->sdfDataSize.y;
