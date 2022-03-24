@@ -26,7 +26,7 @@ void main() {
 	
 layout(location = 0) out vec4 out_Color;
 
-in vec2 vs_tex;
+in vec3 vs_tex;
 
 uniform float stepLow; // used for non-smooth step
 uniform float stepHigh;
@@ -40,7 +40,7 @@ uniform sampler2DArray fontTex;
 void main(void) {
 
 	float dd;
-	float d = dd = texture(fontTex, gs_tex).r;
+	float d = dd = texture(fontTex, vs_tex).r;
 /*		
 	out_Color = vec4(d,d,d, 1.0); 
 	return;

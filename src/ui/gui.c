@@ -220,8 +220,8 @@ void gui_drawCharacter(
 	
 	v->pos.t = off.y + hoff - ci->topLeftOffset.y * fontsize;
 	v->pos.l = off.x + ci->topLeftOffset.x * fontsize;
-	v->pos.b = off.y + hoff + ci->size.y * fontsize - ci->topLeftOffset.y * fontsize;
-	v->pos.r = off.x + ci->size.x * fontsize + ci->topLeftOffset.x * fontsize;
+	v->pos.b = off.y + hoff + ci->size * fontsize - ci->topLeftOffset.y * fontsize;
+	v->pos.r = off.x + ci->size * fontsize + ci->topLeftOffset.x * fontsize;
 	
 	v->guiType = 1; // text
 	
@@ -313,8 +313,8 @@ void gui_drawTextLineAdv(
 			
 			v->pos.t = off.y + hoff - ci->topLeftOffset.y * fontsize;
 			v->pos.l = off.x + alignoff + adv + ci->topLeftOffset.x * fontsize;
-			v->pos.b = off.y + hoff + ci->size.y * fontsize - ci->topLeftOffset.y * fontsize;
-			v->pos.r = off.x + alignoff + adv + ci->size.x * fontsize + ci->topLeftOffset.x * fontsize;
+			v->pos.b = off.y + hoff + ci->size * fontsize - ci->topLeftOffset.y * fontsize;
+			v->pos.r = off.x + alignoff + adv + ci->size * fontsize + ci->topLeftOffset.x * fontsize;
 			
 			v->guiType = 1; // text
 			

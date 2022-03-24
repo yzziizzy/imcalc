@@ -29,11 +29,10 @@ struct charInfo {
 	Vector2 texNormOffset; // normalized texture coordinates
 	Vector2 texNormSize; 
 	
-	// typographic info
+	// typographic info, normalized to 1px font
 	float advance; // horizonatal distance to advance after this char
 	Vector2 topLeftOffset; // offset from the baseline to the top left vertex of the *quad*
-	Vector2 size;
-	
+	float size;
 };
 
 
@@ -88,6 +87,9 @@ typedef struct FontGen {
 	// the raw glyph is oversampled by FontManager.oversample times
 	int magnitude; // this is the search range of the sdf algorithm,
 	               //   measured in pixels
+	
+	int genSize; // the size that the source glyphs are rendered, in font pixels.
+	             // = 192 (sdf positive range) / magnitude
 	
 	// metrics for the raw glyph, in pixels
 	uint8_t* rawGlyph;
@@ -147,6 +149,8 @@ GUIFont* FontManager_findFont(FontManager* fm, char* name);
 FontManager* FontManager_alloc(GUI_GlobalSettings* gs);
 void FontManager_init(FontManager* fm, GUI_GlobalSettings* gs);
 
+
+void gen_sdf_test_samples(char* fontName, int code);
 
 
 

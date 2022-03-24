@@ -35,6 +35,9 @@ static FontGen* addChar(int magnitude, FT_Face* ff, int code, int fontSize, char
 static void addFont(FontManager* fm, char* name);
 
 
+void sdfgen_new(FontGen* fg);
+
+
 
 /*
 
@@ -62,7 +65,8 @@ FontManager* FontManager_alloc(GUI_GlobalSettings* gs) {
 	fm->magnitude = 8;
 	fm->maxAtlasSize = 512;
 
-	FontManager_init(fm, gs);
+// BUG: split out gl init operations now
+	//FontManager_init(fm, gs);
 	
 	return fm;
 }
@@ -186,7 +190,7 @@ static void checkFTlib() {
 
 
 typedef struct fb_info {
-	GLuint fbi_id, tex_id;
+	GLuint fb_id, tex_id;
 } fb_info;
 
 typedef struct quad_info {
@@ -249,7 +253,7 @@ void mk_fbo(fb_info* fb, int size_x, int size_y, GLuint format, GLuint fmt_width
 	fb->tex_id = texid;
 }
 
-void mk_quad(&quad_info) {
+void mk_quad(quad_info* qd) {
 
 	glexit("");
 
@@ -261,12 +265,12 @@ void mk_quad(&quad_info) {
 		1.0, 1.0
 	};
 	
-	glGenVertexArrays(1, &gpu->vao);
-	glBindVertexArray(gpu->vao);
+	glGenVertexArrays(1, &qd->vao);
+	glBindVertexArray(qd->vao);
 	glexit("");
 	
-	glGenBuffers(1, &gpu->vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, gpu->vbo);
+	glGenBuffers(1, &qd->vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, qd->vbo);
 	
 	glEnableVertexAttribArray(0);
 	glexit("");
@@ -291,12 +295,12 @@ void init_gpu_sdf(gpu_calc_info* gpu, int magnitude, int sz_x, int sz_y) {
 	quad_info qd;
 	mk_quad(&qd);
 	gpu->vao = qd.vao;
-	gpu->vbo = qb.vbo;
+	gpu->vbo = qd.vbo;
 	
 	fb_info fb;
 	mk_fbo(&fb, sz_x, sz_y, GL_RED, GL_UNSIGNED_BYTE);
-	gpu->fb_id = fb.fbid;
-	gpu->fb_tex_id = fb.texid;
+	gpu->fb_id = fb.fb_id;
+	gpu->fb_tex_id = fb.tex_id;
 	
 	// shader
 	gpu->shader = loadCombinedProgram("sdfGen");
@@ -458,18 +462,18 @@ void CalcSDF_GPU(gpu_calc_info* gpu, FontGen* fg) {
 
 
 void gen_sdf_test_samples(char* fontName, int code) {
-	
+	printf("\n\n-------------------\nGenerating font samples\n-------------------\n\n");
 				
 	checkFTlib();
 	
-	Shader* test_shader = loadCombinedProgram("sdfTest");
+	ShaderProgram* test_shader = loadCombinedProgram("sdfTest");
 	
 	quad_info qd;
 	mk_quad(&qd);			
 	
-	for(int size = 8; size <= 32; size += 4) {
-		for(int bold = 0; bold <= 1; bold++) {
-			for(int italic = 0; italic <= 1; italic++) {
+	for(int size = 32; size <= 32; size += 4) {
+		for(int bold = 0; bold <= 0; bold++) {
+			for(int italic = 0; italic <= 0; italic++) {
 		
 				FT_Error err;
 				FT_Face fontFace;
@@ -486,6 +490,8 @@ void gen_sdf_test_samples(char* fontName, int code) {
 					fprintf(stderr, "Could not access font '%s' at '%s'.\n", fontName, fontPath);
 					return;
 				}
+				
+			
 				
 			//	f->ascender = fontFace->ascender >> 6;
 			//	f->descender = fontFace->descender >> 6;
@@ -506,15 +512,26 @@ void gen_sdf_test_samples(char* fontName, int code) {
 					FontGen* fg = addChar(magnitude , &fontFace, code, size, bold, italic);
 					//fg->font = f;
 					
+					{
+						static char buf[200];
+						sprintf(buf, "raw-glyph-%d-[%d]-%s%s.png", fg->code, size, bold?"b":"", italic?"i":"");
+						writePNG(buf, 1, fg->rawGlyph, fg->rawGlyphSize.x, fg->rawGlyphSize.y);
+					}
+					
+					
+					
+					sdfgen_new(fg);
+					exit(2);
+					
 						
 					init_gpu_sdf(&gpu, magnitude, fg->rawGlyphSize.x, fg->rawGlyphSize.y);
 					
-					printf("gpucalc: '%s':%d:%d %c\n", fg->font->name, fg->bold, fg->italic, fg->code);
+					printf("gpucalc: '%s':%d:%d %c\n", fontName, fg->bold, fg->italic, fg->code);
 					CalcSDF_GPU(&gpu, fg);
 					
 					{
 						static char buf[200];
-						sprintf(buf, "sdf-test-%d.png", fg->code);
+						sprintf(buf, "sdf-test-%d-[%d-%d-%s%s].png", fg->code, size, magnitude, bold?"b":"", italic?"i":"");
 						writePNG(buf, 1, fg->sdfGlyph, fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
 					}
 					
@@ -549,14 +566,14 @@ void gen_sdf_test_samples(char* fontName, int code) {
 						fg->rawGlyph);
 	
 					
-					for(int sampleSize = 8; sampleSize <= 20; sampleSize += 2) {
+					for(int sampleSize = 8; sampleSize <= 8; sampleSize += 2) {
 						for(int useSmooth = 0; useSmooth <= 1; useSmooth++) {
-							for(float stepLow = 0.1; stepLow <= 1.0; stepLow += 0.1) {
-								for(float stepHigh = 0.1; stepHigh <= 1.0; stepHigh += 0.1) {
+							for(float stepLow = 0.4; stepLow <= .7; stepLow += 0.1) {
+								for(float stepHigh = 0.4; stepHigh <= .7; stepHigh += 0.1) {
 						
 									// the fbo
 									fb_info fb;
-									mk_fbo(&fb, sz_x, sz_y, GL_RED, GL_UNSIGNED_BYTE);
+									mk_fbo(&fb, fg->sdfGlyphSize.x, fg->sdfGlyphSize.y, GL_RED, GL_UNSIGNED_BYTE);
 									
 									// the shader
 									glUseProgram(test_shader->id);
@@ -575,7 +592,7 @@ void gen_sdf_test_samples(char* fontName, int code) {
 								
 									
 									
-									glUniform2iv(glGetUniformLocation(gpu->shader->id, "outSize"), 1, (int*)&fg->sdfGlyphSize);
+									glUniform2iv(glGetUniformLocation(gpu.shader->id, "outSize"), 1, (int*)&fg->sdfGlyphSize);
 									printf("outSize: %d,%d\n", fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
 									
 									glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -595,7 +612,9 @@ void gen_sdf_test_samples(char* fontName, int code) {
 					
 									{
 										static char buf[200];
-										sprintf(buf, "sdf-sample-%d.png", fg->code);
+										sprintf(buf, "render-%d-[%d-%d-%s%s]-%0.1f,%0.1f,%s.png", 
+											fg->code, size, magnitude, bold?"b":"", italic?"i":"", 
+											stepLow, stepHigh, useSmooth?"sm":"");
 										writePNG(buf, 1, fg->sdfGlyph, fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
 									}
 					
@@ -1090,8 +1109,8 @@ void FontManager_createAtlas(FontManager* fm) {
 		c->topLeftOffset.x = (gen->rawBearing.x);// + (float)gen->sdfBounds.min.x;
 		c->topLeftOffset.y = (gen->rawBearing.y);// - (float)gen->sdfBounds.min.y;
 		
-		c->size.x = gen->sdfDataSize.x;
-		c->size.y = gen->sdfDataSize.y;
+		c->size = gen->genSize;
+//		c->genSize.y = gen->sdfDataSize.y;
 		
 //		printf("toff: %f, %f \n", c->texNormOffset.x, c->texNormOffset.y);
 //		printf("tsize: %f, %f \n", c->texNormSize.x, c->texNormSize.y);
@@ -1285,5 +1304,168 @@ int FontManager_loadAtlas(FontManager* fm, char* path) {
 	
 	return 0;
 }
+
+
+
+
+
+
+void sdfgen_new(FontGen* fg) {
+
+	char* input;
+	int in_size_x = fg->rawGlyphSize.x, in_size_y = fg->rawGlyphSize.y; // size of the input image, in input pixels
+	printf("input size: %d,%d\n", in_size_x, in_size_y);
+
+	// out_mag is the size the field is calculated away from the true edge,
+	//   in output pixels
+	int out_mag = 8;
+
+	
+
+	//// ----- Init the Output -----
+
+	// number of input pixels inside each output pixel
+	int io_ratio = floor(192.0 / (float)out_mag);
+	printf("io_ratio: %d\n", io_ratio);
+	
+	
+	// how big the core of the output needs to be, in real-valued output pixels
+	float out_needed_xf = (float)in_size_x / io_ratio; 
+	float out_needed_yf = (float)in_size_y / io_ratio; 
+	printf("out needed: %.2f,%.2f\n", out_needed_xf, out_needed_yf);
+	
+	int out_padding = out_mag;
+	
+	// size of the output image, in output pixels, including padding
+	int out_size_x = ceil(out_needed_xf) + (out_padding * 2);
+	int out_size_y = ceil(out_needed_yf) + (out_padding * 2);
+	printf("outsize: %d,%d\n", out_size_x, out_size_y);
+	
+	char* output = malloc(out_size_x * out_size_y * sizeof(output));
+	
+	
+	//// ----- Geometric Utilities -----
+	
+	// offset to the center of an output pixel from the TL corner
+	float io_center_off = (float)io_ratio / 2.0;
+	
+	#define INPX(x, y)  input[(x + (y * in_size_x))]
+	#define OUTLOC(x, y)  (x + (y * out_size_x))
+	
+	
+	
+	//// ----- Output Color Cache -----
+	
+	char* out_center_cache = calloc(1, out_size_x * out_size_y * sizeof(*out_center_cache));
+	
+	// TODO: only the core, non-padded area
+	for(int oy = 0; oy < out_size_y; oy++) {
+	for(int ox = 0; ox < out_size_x; ox++) {
+		
+		// very wrong
+		out_center_cache[OUTLOC(ox, oy)] = INPX(ox, oy);
+		
+	}}
+	
+	
+	{
+		static char buf[200];
+		sprintf(buf, "output-center-cache-%d.png", fg->code);
+		writePNG(buf, 1, out_center_cache, out_size_x, out_size_y);
+	}
+	
+	
+	//// ----- SDF Generation -----
+	
+	// Scan each input line looking for black pixels that touch white pixels.
+	// When found, update output pixels with new min distance to an edge in
+	// a radius around this point. In/out calculation is determined by the 
+	// color of the pixel underneath the output pixel center. All distances
+	// are to pixel centers.   
+	
+	
+	for(int iy = 0; iy < in_size_y; iy++) {
+	
+		
+		for(int ix = 0; ix < in_size_x; ix++) {
+			int is_diff = 0;
+			
+			int p = INPX(ix, iy);
+			if(p != 0) continue; // the center pixel should be the black one
+			
+			// TODO: similar check for interior pixels
+			
+			if(iy > 0) {
+				if(p != INPX(ix, iy - 1)) is_diff = 1;
+			}
+			
+			if(iy < in_size_y) {
+				if(p != INPX(ix, iy + 1)) is_diff = 1;
+			}	
+			
+			if(ix > 0) {
+				if(p != INPX(ix - 1, iy)) is_diff = 1;
+			}	
+			
+			if(ix < in_size_x) {
+				if(p != INPX(ix + 1, iy)) is_diff = 1;
+			}	
+			
+			
+			if(!is_diff) continue;
+			
+			
+		
+			// there is an edge
+			// update all the output pixels
+			
+			int out_cx = ix / out_mag;
+			int out_cy = iy / out_mag;
+			
+			for(int offy = -out_mag; offy < out_mag; offy++) { // in output pixels
+			for(int offx = -out_mag; offx < out_mag; offx++) {
+				
+				// the distance should be calculated in putput pixels, to the center of the output pixel
+				float d = sqrt(offy * offy + offx * offx);
+				
+				int encoded = sdfEncode(d, 0, 192);
+				
+				
+				// output encode the distance, overwrite if lower
+				
+				int existing = output[out_cx + offx + ((out_cy + offy) * out_size_x)];
+				
+					
+				if(encoded < existing) { 
+					output[out_cx + offx + ((out_cy + offy) * out_size_x)] = encoded;
+				}
+			}}
+		
+		}
+	}
+
+
+	{
+		static char buf[200];
+		sprintf(buf, "new-sdf-output-%d.png", fg->code);
+		writePNG(buf, 1, output, out_size_x, out_size_y);
+	}
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

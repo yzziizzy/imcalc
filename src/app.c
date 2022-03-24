@@ -147,6 +147,9 @@ void initApp(XStuff* xs, AppState* as, int argc, char* argv[]) {
 void initAppGL(XStuff* xs, AppState* as) {
 	glerr("left over error on app init");
 	
+	gen_sdf_test_samples("Times New Roman", 'A');
+	exit(1);
+	
 	TextureAtlas_initGL(as->ta, &as->globalSettings);
 	
 	GUIManager_initGL(as->gui);
