@@ -471,7 +471,7 @@ void gen_sdf_test_samples(char* fontName, int code) {
 	quad_info qd;
 	mk_quad(&qd);			
 	
-	for(int size = 32; size <= 32; size += 4) {
+	for(int size = 2048; size <= 2048; size += 4) {
 		for(int bold = 0; bold <= 0; bold++) {
 			for(int italic = 0; italic <= 0; italic++) {
 		
@@ -1312,13 +1312,15 @@ int FontManager_loadAtlas(FontManager* fm, char* path) {
 
 void sdfgen_new(FontGen* fg) {
 
-	char* input;
+	double start_time = getCurrentTime();
+
+	char* input = fg->rawGlyph;
 	int in_size_x = fg->rawGlyphSize.x, in_size_y = fg->rawGlyphSize.y; // size of the input image, in input pixels
 	printf("input size: %d,%d\n", in_size_x, in_size_y);
 
 	// out_mag is the size the field is calculated away from the true edge,
 	//   in output pixels
-	int out_mag = 8;
+	int out_mag = 4;
 
 	
 
@@ -1341,39 +1343,49 @@ void sdfgen_new(FontGen* fg) {
 	int out_size_y = ceil(out_needed_yf) + (out_padding * 2);
 	printf("outsize: %d,%d\n", out_size_x, out_size_y);
 	
-	char* output = malloc(out_size_x * out_size_y * sizeof(output));
+	unsigned char* output = malloc(out_size_x * out_size_y * sizeof(output));
 	
 	
 	//// ----- Geometric Utilities -----
 	
-	// offset to the center of an output pixel from the TL corner
+	// offset to the center of an output pixel from the edge
 	float io_center_off = (float)io_ratio / 2.0;
 	
-	#define INPX(x, y)  input[(x + (y * in_size_x))]
-	#define OUTLOC(x, y)  (x + (y * out_size_x))
+	#define INPX(x, y)  input[((x) + ((y) * in_size_x))]
+	#define OUTPX(x, y)  output[((x) + ((y) * out_size_x))]
 	
 	
 	
 	//// ----- Output Color Cache -----
-	
-	char* out_center_cache = calloc(1, out_size_x * out_size_y * sizeof(*out_center_cache));
+	// The algorithm depends on whether the point being tested is the same color as the pixel under the 
+	//   output pixel being calculated. We create a cache here to simply the lookup.
+	//unsigned char* out_center_cache = calloc(1, out_size_x * out_size_y * sizeof(*out_center_cache));
 	
 	// TODO: only the core, non-padded area
 	for(int oy = 0; oy < out_size_y; oy++) {
 	for(int ox = 0; ox < out_size_x; ox++) {
 		
+		OUTPX(ox, oy) = 0xff;
+		
 		// very wrong
-		out_center_cache[OUTLOC(ox, oy)] = INPX(ox, oy);
+	//	out_center_cache[OUTLOC(ox, oy)] = INPX(ox, oy);
 		
 	}}
 	
 	
-	{
+	
+	/*{
 		static char buf[200];
 		sprintf(buf, "output-center-cache-%d.png", fg->code);
 		writePNG(buf, 1, out_center_cache, out_size_x, out_size_y);
-	}
+	}//*/
 	
+	
+	// convert all input values to 0's and 1's
+	for(int iy = 0; iy < in_size_y; iy++) {	
+	for(int ix = 0; ix < in_size_x; ix++) {
+		INPX(ix, iy) = !!INPX(ix, iy);
+	}}
 	
 	//// ----- SDF Generation -----
 	
@@ -1391,68 +1403,153 @@ void sdfgen_new(FontGen* fg) {
 			int is_diff = 0;
 			
 			int p = INPX(ix, iy);
-			if(p != 0) continue; // the center pixel should be the black one
+			//if(p == 0) continue; // the center pixel should be the white (foreground) one
 			
 			// TODO: similar check for interior pixels
 			
-			if(iy > 0) {
-				if(p != INPX(ix, iy - 1)) is_diff = 1;
-			}
-			
-			if(iy < in_size_y) {
-				if(p != INPX(ix, iy + 1)) is_diff = 1;
-			}	
-			
-			if(ix > 0) {
-				if(p != INPX(ix - 1, iy)) is_diff = 1;
-			}	
-			
-			if(ix < in_size_x) {
-				if(p != INPX(ix + 1, iy)) is_diff = 1;
-			}	
-			
-			
+			do {
+				if(ix == 0 || iy == 0 || ix == in_size_x - 1 || iy == in_size_y - 1) {
+					if(p == 1) { is_diff = 1; break; }
+				}
+				
+				if(iy > 0) {
+					if(p != INPX(ix, iy - 1)) { is_diff = 1; break; }
+				}
+				
+				if(iy < in_size_y-1) {
+					if(p != INPX(ix, iy + 1)) { is_diff = 1; break; }
+				}	
+				
+				if(ix > 0) {
+					if(p != INPX(ix - 1, iy)) { is_diff = 1; break; }
+				}	
+				
+				if(ix < in_size_x-1) {
+					if(p != INPX(ix + 1, iy)) { is_diff = 1; break; }
+				}	
+				
+			} while(0);		
 			if(!is_diff) continue;
 			
-			
+			//printf("edge: %d,%d\n", iy, ix);
+			//break;
 		
 			// there is an edge
 			// update all the output pixels
 			
-			int out_cx = ix / out_mag;
-			int out_cy = iy / out_mag;
+			// output pixel that the found edge lies in
+			int out_cx = floor(((float)ix / (float)io_ratio)/* + 0.5*/);
+			int out_cy = floor(((float)iy / (float)io_ratio)/* + 0.5*/);
+			//printf("outcxy: %d,%d\n", out_cx, out_cy);
 			
-			for(int offy = -out_mag; offy < out_mag; offy++) { // in output pixels
-			for(int offx = -out_mag; offx < out_mag; offx++) {
+			for(int oy = out_cy; oy < out_cy+2*out_mag; oy++) { // in output pixels
+			for(int ox = out_cx; ox < out_cx+2*out_mag; ox++) {
 				
-				// the distance should be calculated in putput pixels, to the center of the output pixel
-				float d = sqrt(offy * offy + offx * offx);
 				
-				int encoded = sdfEncode(d, 0, 192);
+				
+				
+				
+				// The distance should be calculated in input pixels, to the center of the output pixel
+				// The ouput image is padded, so it's possible for output pixels to have negative pixel
+				//   coordinate values in the input image coordinate domain				
+				
+				// input pixels from the edge of the output image to the edge of the input image
+				float i_padding = io_ratio * out_padding;
+				
+				// input pixels from the input edge to the current output tile's edge
+				float i_cur_out_x = out_cx * io_ratio;
+				float i_cur_out_y = out_cy * io_ratio;
+				
+				// input pixels from the output image's edge to the test pixel
+				float i_from_out_edge_x = ix + i_padding;  
+				float i_from_out_edge_y = iy + i_padding;  
+				
+				// input pixels from the output image's edge to the output cell center being updated
+				float i_out_center_x = (ox) * io_ratio + io_center_off;
+				float i_out_center_y = (oy) * io_ratio + io_center_off;
+				
+				
+				// distance between the test pixel and the updating output pixel center 
+				float dx = (i_out_center_x - i_from_out_edge_x);
+				float dy = (i_out_center_y - i_from_out_edge_y);
+				float d = sqrt(dx * dx + dy * dy);
+				
+				float norm = d / 192.0f;
+				float scaled = norm * 256;
+				int clamped = d > 192 ? 192 : d;
 				
 				
 				// output encode the distance, overwrite if lower
 				
-				int existing = output[out_cx + offx + ((out_cy + offy) * out_size_x)];
+				int existing = OUTPX(ox, oy);
+				
+				// test pixel is the one with the found edge
+				// target pixel is the input pixel under the center of the output pixel being updated
+				// p = test pixel color
+				int p_target = -1; // everything in the padding area is black
+				
+				int i_real_ox = i_out_center_x - i_padding;
+				int i_real_oy = i_out_center_y - i_padding;
+				if(i_real_ox >=0 && i_real_oy >= 0 && i_real_ox < in_size_x && i_real_oy < in_size_y) { 
+					p_target = INPX(i_real_ox, i_real_oy);
+				}
+				
+				if(p == 1 && p == p_target) {
+					clamped = d > 64 ? 64 : d; 
+					clamped = 64 - clamped;
+					
+					existing = 64 - existing;
+					//printf("clamped:%d \n", clamped);
+					if(clamped > existing) { 
+						OUTPX(ox, oy) = clamped;
+					}
+					
+				}
+				else {
+					clamped += 64;	
+					
+					if(clamped < existing) { 
+						if(clamped < 64) printf("oops\n");
+						OUTPX(ox, oy) = clamped;
+					}
+				}
+		/*		
+		static uint8_t sdfEncode(float d, int inside, float maxDist) {
+	int o;
+	d = sqrt(d);
+	float norm = d / maxDist;
+	if(inside) norm = -norm;
+	
+	o = (norm * 192) + 64;
+	
+	return o < 0 ? 0 : (o > 255 ? 255 : o);
+}
+	*/							
+				
+				//unsigned char encoded = sdfEncode(d, p, 192);
+				//printf("d: OUT(% d,% d) %f [clamped:%d]\n", ox, oy, d, clamped);
+				
+								
+				
 				
 					
-				if(encoded < existing) { 
-					output[out_cx + offx + ((out_cy + offy) * out_size_x)] = encoded;
-				}
+				
 			}}
-		
+			
+					
 		}
+		//break; // only one row
 	}
-
 
 	{
 		static char buf[200];
 		sprintf(buf, "new-sdf-output-%d.png", fg->code);
 		writePNG(buf, 1, output, out_size_x, out_size_y);
-	}
+	}//*/
+	
+	printf("time elapsed: %fms\n", (getCurrentTime() - start_time) * 1000);
 
 }
-
 
 
 
