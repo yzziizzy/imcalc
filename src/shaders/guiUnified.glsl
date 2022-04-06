@@ -284,7 +284,8 @@ void main(void) {
 		return;
 	}
 	else if(gs_guiType == 1) { // text
-		
+		out_Color = vec4(.9,.2,.2, 1); 
+		return;
 		float dd;
 		float d = dd = texture(fontTex, gs_tex).r;
 /*		
@@ -314,7 +315,7 @@ void main(void) {
 		
 		//if(dd < .35) discard;
 		out_Color = vec4(gs_fg_color.rgb, a); 
-// 		out_Color = vec4(.9,.9,.9, a); 
+ 		
 		return;
 	}
 	else if(gs_guiType == 2) { // simple image

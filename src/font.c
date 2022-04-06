@@ -39,24 +39,6 @@ void sdfgen_new(FontGen* fg);
 
 
 
-/*
-
-
-Magnitude is the distance in pixels for the distance field to be calculated
-   around the actual glyph. It is the width of the 'glow' in the sdf.
-
-Oversample is the ratio of the raw raster image size to the desired output sdf.
-
-
-
-
-
-
-
-
-*/
-
-
 FontManager* FontManager_alloc(GUI_GlobalSettings* gs) {
 	FontManager* fm;
 	
@@ -66,7 +48,7 @@ FontManager* FontManager_alloc(GUI_GlobalSettings* gs) {
 	fm->maxAtlasSize = 512;
 
 // BUG: split out gl init operations now
-	//FontManager_init(fm, gs);
+	FontManager_init(fm, gs);
 	
 	return fm;
 }
@@ -94,7 +76,7 @@ void FontManager_init(FontManager* fm, GUI_GlobalSettings* gs) {
 		i = 0;
 		while(gs->fontList[i] != NULL) {
 			// printf("building font: %s\n", gs->Buffer_fontList[i]);
-			FontManager_addFont(fm, gs->fontList[i], 16);
+			FontManager_addFont(fm, gs->fontList[i], 512);
 			i++;
 		}
 		FontManager_finalize(fm);
@@ -188,279 +170,7 @@ static void checkFTlib() {
 	}
 }
 
-
-typedef struct fb_info {
-	GLuint fb_id, tex_id;
-} fb_info;
-
-typedef struct quad_info {
-	GLuint vao, vbo;
-} quad_info;
-
-
-typedef struct {
-	GLuint vao, vbo;
-	GLuint fb_tex_id;
-	GLuint fb_id;
-	ShaderProgram* shader;	
-} gpu_calc_info;
-
-
-// returns fbo name 
-// leaves the new framebuffer bound
-void mk_fbo(fb_info* fb, int size_x, int size_y, GLuint format, GLuint fmt_width) {
-
-	GLenum status;
-	GLuint fbid;
-	GLuint texid;
-	
-	// backing texture	
-	glGenTextures(1, &texid);
-	glBindTexture(GL_TEXTURE_2D, texid);
-	
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	
-	// allocate storage
-	glTexImage2D(
-		GL_TEXTURE_2D, 0, format, 
-		size_x, size_y, 
-		0, format, fmt_width, NULL
-	);
-	
-	
-	// the fbo itself
-	glGenFramebuffers(1, &fbid);
-	glBindFramebuffer(GL_FRAMEBUFFER, fbid);
-	glexit("sdf fbo creation");
-	
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texid, 0);
-	glexit("");
-	
-	GLenum db = GL_COLOR_ATTACHMENT0;
-	glDrawBuffers(1, &db);
-	glexit("");
-	
-	status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-	if(status != GL_FRAMEBUFFER_COMPLETE) {
-		printf("fbo status invalid\n");
-		exit(1);
-	}
-	
-	fb->fb_id = fbid;
-	fb->tex_id = texid;
-}
-
-void mk_quad(quad_info* qd) {
-
-	glexit("");
-
-	// quad
-	float vertices[] = {
-		-1.0, -1.0,
-		-1.0, 1.0,
-		1.0, -1.0,
-		1.0, 1.0
-	};
-	
-	glGenVertexArrays(1, &qd->vao);
-	glBindVertexArray(qd->vao);
-	glexit("");
-	
-	glGenBuffers(1, &qd->vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, qd->vbo);
-	
-	glEnableVertexAttribArray(0);
-	glexit("");
-	
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, 0);
-	glexit("");
-	
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-	glexit("");
-}
-
-
-void init_gpu_sdf(gpu_calc_info* gpu, int magnitude, int sz_x, int sz_y) {
-	
-	if(0 >= sz_x * sz_y) {
-		fprintf(stderr, "cannot generate font: zero raw size\n");
-		exit(1);
-	} 
-	
-	glexit("");
-
-	quad_info qd;
-	mk_quad(&qd);
-	gpu->vao = qd.vao;
-	gpu->vbo = qd.vbo;
-	
-	fb_info fb;
-	mk_fbo(&fb, sz_x, sz_y, GL_RED, GL_UNSIGNED_BYTE);
-	gpu->fb_id = fb.fb_id;
-	gpu->fb_tex_id = fb.tex_id;
-	
-	// shader
-	gpu->shader = loadCombinedProgram("sdfGen");
-	glUseProgram(gpu->shader->id);
-	glexit("shading prog");
-
-	glexit("");
-	glUniform1f(glGetUniformLocation(gpu->shader->id, "searchSize"), magnitude);
-	printf("searchSize/mag: %d\n", magnitude);
-	
-	// other properties
-	glActiveTexture(GL_TEXTURE0 + 0);
-	glPixelStorei(GL_PACK_ALIGNMENT, 1);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	glexit(""); 
-	glDisable(GL_DEPTH_TEST);
-	glDisable(GL_BLEND);
-	glDisable(GL_CULL_FACE);
-	glexit("");
-	
-	// set to handle the largest texture
-	glViewport(0, 0, sz_x, sz_y);
-	glexit("");
-	// everything left bound on purpose
-}
-
-void destroy_gpu_sdf(gpu_calc_info* gpu) {
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glDeleteFramebuffers(1,  &gpu->fb_id);
-	glDeleteTextures(1,  &gpu->fb_tex_id);
-	
-	glDeleteBuffers(1, &gpu->vbo);
-	glDeleteVertexArrays(1, &gpu->vao);
-}
-
-
-void CalcSDF_GPU(gpu_calc_info* gpu, FontGen* fg) {
-	
-	glClear(GL_COLOR_BUFFER_BIT);
-	glexit("");
-	// input data texture of raw glyph
-	GLuint rawID;
-	glexit("");
-	
-	glGenTextures(1, &rawID);
-	glBindTexture(GL_TEXTURE_2D, rawID);
-	
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glexit("");
-	
-	glTexImage2D(GL_TEXTURE_2D, // target
-		0,  // level, 0 = base, no minimap,
-		GL_RED, // internalformat
-		fg->rawGlyphSize.x,
-		fg->rawGlyphSize.y,
-		0,  // border
-		GL_RED,  // format
-		GL_UNSIGNED_BYTE, // input type
-		fg->rawGlyph);
-	
-	glexit("");
-	
-		
-	glUniform2iv(glGetUniformLocation(gpu->shader->id, "outSize"), 1, (int*)&fg->sdfGlyphSize);
-	printf("outSize: %d,%d\n", fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
-	
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-	glexit("quad draw");
-	
-	// fetch the results. this call will flush the pipeline implicitly	
-	fg->sdfGlyph = malloc(fg->sdfGlyphSize.x * fg->sdfGlyphSize.y * sizeof(*fg->sdfGlyph));
-	glBindBuffer( GL_PIXEL_PACK_BUFFER, 0);
-	glReadPixels(0,0,	
-		fg->sdfGlyphSize.x,
-		fg->sdfGlyphSize.y,
-		GL_RED,
-		GL_UNSIGNED_BYTE,
-		fg->sdfGlyph
-	);
-	
-	printf("code: %d, sz: %d,%d\n", fg->code, fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
-	
-	/*
-	{
-		static char buf[200];
-		sprintf(buf, "raw-test-%d.png", fg->code);
-		writePNG(buf, 1, fg->rawGlyph, fg->rawGlyphSize.x, fg->rawGlyphSize.y);
-	}
-	{
-		static char buf[200];
-		sprintf(buf, "sdf-test-%d.png", fg->code);
-		writePNG(buf, 1, fg->sdfGlyph, fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
-	}
-	*/
-	
-	glDeleteTextures(1, &rawID);
-	
-	int x, y;
-	
-	// find the bounds of the sdf data
-	// first rows
-	for(y = 0; y < fg->sdfGlyphSize.y; y++) {
-		int hasData = 0;
-		for(x = 0; x < fg->sdfGlyphSize.x; x++) {
-			hasData += fg->sdfGlyph[x + (y * fg->sdfGlyphSize.x)];
-		}
-		
-		if(hasData / fg->sdfGlyphSize.x < 255) {
-			fg->sdfBounds.min.y = y;
-			break;
-		}
-	}
-	for(y = fg->sdfGlyphSize.y - 1; y >= 0; y--) {
-		int hasData = 0;
-		for(x = 0; x < fg->sdfGlyphSize.x; x++) {
-			hasData += fg->sdfGlyph[x + (y * fg->sdfGlyphSize.x)];
-		}
-		
-		if(hasData / fg->sdfGlyphSize.x < 255) {
-			fg->sdfBounds.max.y = y + 1;
-			break;
-		}
-	}
-
-	for(x = 0; x < fg->sdfGlyphSize.x; x++) {
-		int hasData = 0;
-		for(y = 0; y < fg->sdfGlyphSize.y; y++) {
-			hasData += fg->sdfGlyph[x + (y * fg->sdfGlyphSize.x)];
-		}
-		
-		if(hasData / fg->sdfGlyphSize.y < 255) {
-			fg->sdfBounds.min.x = x;
-			break;
-		}
-	}
-	for(x = fg->sdfGlyphSize.x - 1; x >= 0; x++) {
-		int hasData = 0;
-		for(y = 0; y < fg->sdfGlyphSize.y; y++) {
-			hasData += fg->sdfGlyph[x + (y * fg->sdfGlyphSize.x)];
-		}
-		
-		if(hasData / fg->sdfGlyphSize.y < 255) {
-			fg->sdfBounds.max.x = x + 1;
-			break;
-		}
-	}
-	
-	fg->sdfDataSize.x = fg->sdfBounds.max.x - fg->sdfBounds.min.x;
-	fg->sdfDataSize.y = fg->sdfBounds.max.y - fg->sdfBounds.min.y;
-	
-	free(fg->rawGlyph);
-	
-}
-
-
-
-
+/*
 void gen_sdf_test_samples(char* fontName, int code) {
 	printf("\n\n-------------------\nGenerating font samples\n-------------------\n\n");
 				
@@ -631,152 +341,11 @@ void gen_sdf_test_samples(char* fontName, int code) {
 	
 }
 
+*/
 
 
 
 
-
-
-
-
-
-
-
-static float dist(int a, int b) {
-	return a*a + b*b;
-}
-static float dmin(int a, int b, float d) {
-	return fmin(dist(a, b), d);
-}
-
-static int boundedOffset(int x, int y, int ox, int oy, int w, int h) {
-	int x1 = x + ox;
-	int y1 = y + oy;
-	if(x1 < 0 || y1 < 0 || x1 >= w || y1 >= h) return -1;
-	return x1 + (w * y1);
-}
-
-static uint8_t sdfEncode(float d, int inside, float maxDist) {
-	int o;
-	d = sqrt(d);
-	float norm = d / maxDist;
-	if(inside) norm = -norm;
-	
-	o = (norm * 192) + 64;
-	
-	return o < 0 ? 0 : (o > 255 ? 255 : o);
-}
-
-void CalcSDF_Software_(FontGen* fg) {
-	
-	int searchSize;
-	int x, y, ox, oy, sx, sy;
-	int dw, dh;
-	
-	uint8_t* input;
-	uint8_t* output;
-	
-	float d, maxDist;
-	
-	searchSize = fg->magnitude;
-	maxDist = 0.5 * searchSize;
-	dw = fg->rawGlyphSize.x;
-	dh = fg->rawGlyphSize.y;
-	
-	// this is wrong(?)
-	fg->sdfGlyphSize.x = dw;//floor(((float)(dw/* + (2*fg->magnitude)*/) / (float)()) + .5);
-	fg->sdfGlyphSize.y = dh;//floor(((float)(dh/* + (2*fg->magnitude)*/) / (float)(fg->oversample)) + .5); 
-	
-	fg->sdfGlyph = output = malloc(fg->sdfGlyphSize.x * fg->sdfGlyphSize.y * sizeof(uint8_t));
-	input = fg->rawGlyph;
-	
-	fg->sdfBounds.min.x = 0;
-	fg->sdfBounds.max.y = fg->sdfGlyphSize.y;
-	fg->sdfBounds.max.x = fg->sdfGlyphSize.x; 
-	fg->sdfBounds.min.y = 0;
-	
-	// calculate the sdf 
-	for(y = 0; y < fg->sdfGlyphSize.y; y++) {
-		for(x = 0; x < fg->sdfGlyphSize.x; x++) {
-			int sx = x;
-			int sy = y;
-			//printf(".");
-			// value right under the center of the pixel, to determine if we are inside
-			// or outside the glyph
-			int v = input[sx + (sy * dw)];
-			
-			d = 999999.99999;
-			
-			
-			for(oy = -searchSize / 2; oy < searchSize; oy++) {
-				for(ox = -searchSize / 2; ox < searchSize; ox++) {
-					int off = boundedOffset(sx, sy, ox, oy, dw, dh);
-					if(off >= 0 && input[off] != v) 
-						d = dmin(ox, oy, d);
-				}
-			}
-			
-			int q = sdfEncode(d, v, maxDist);
-			//printf("%d,%d = %d (%f)\n",x,y,q,d);
-			
-			output[x + (y * fg->sdfGlyphSize.x)] = q;
-		}
-	}
-	
-	
-	// find the bounds of the sdf data
-	// first rows
-	for(y = 0; y < fg->sdfGlyphSize.y; y++) {
-		int hasData = 0;
-		for(x = 0; x < fg->sdfGlyphSize.x; x++) {
-			hasData += output[x + (y * fg->sdfGlyphSize.x)];
-		}
-		
-		if(hasData / fg->sdfGlyphSize.x < 255) {
-			fg->sdfBounds.min.y = y;
-			break;
-		}
-	}
-	for(y = fg->sdfGlyphSize.y - 1; y >= 0; y--) {
-		int hasData = 0;
-		for(x = 0; x < fg->sdfGlyphSize.x; x++) {
-			hasData += output[x + (y * fg->sdfGlyphSize.x)];
-		}
-		
-		if(hasData / fg->sdfGlyphSize.x < 255) {
-			fg->sdfBounds.max.y = y + 1;
-			break;
-		}
-	}
-
-	for(x = 0; x < fg->sdfGlyphSize.x; x++) {
-		int hasData = 0;
-		for(y = 0; y < fg->sdfGlyphSize.y; y++) {
-			hasData += output[x + (y * fg->sdfGlyphSize.x)];
-		}
-		
-		if(hasData / fg->sdfGlyphSize.y < 255) {
-			fg->sdfBounds.min.x = x;
-			break;
-		}
-	}
-	for(x = fg->sdfGlyphSize.x - 1; x >= 0; x++) {
-		int hasData = 0;
-		for(y = 0; y < fg->sdfGlyphSize.y; y++) {
-			hasData += output[x + (y * fg->sdfGlyphSize.x)];
-		}
-		
-		if(hasData / fg->sdfGlyphSize.y < 255) {
-			fg->sdfBounds.max.x = x + 1;
-			break;
-		}
-	}
-	
-	fg->sdfDataSize.x = fg->sdfBounds.max.x - fg->sdfBounds.min.x;
-	fg->sdfDataSize.y = fg->sdfBounds.max.y - fg->sdfBounds.min.y;
-	
-	free(fg->rawGlyph);
-}
 
 
 
@@ -791,6 +360,8 @@ static FontGen* addChar(int magnitude, FT_Face* ff, int code, int fontSize, char
 	fg->italic = italic;
 	fg->bold = bold;
 	fg->magnitude = magnitude;
+	fg->nominalRawSize = fontSize;
+	fg->ioRatio = floor(192.0 / (float)magnitude);
 	
 //	int rawSize = fontSize * fm->oversample;
 	
@@ -820,50 +391,20 @@ static FontGen* addChar(int magnitude, FT_Face* ff, int code, int fontSize, char
 	// back to sdf generation
 	Vector2i rawImgSz = {(slot->metrics.width >> 6), (slot->metrics.height >> 6)};
 	
-	fg->rawGlyphSize.x = (slot->metrics.width >> 6) + (fg->magnitude); 
-	fg->rawGlyphSize.y = (slot->metrics.height >> 6) + (fg->magnitude); 
+	fg->rawGlyphSize.x = (slot->metrics.width >> 6) + 2; 
+	fg->rawGlyphSize.y = (slot->metrics.height >> 6) + 2; 
 	
 	// the raw glyph is copied to the middle of a larger buffer to make the sdf algorithm simpler 
 	fg->rawGlyph = calloc(1, sizeof(*fg->rawGlyph) * fg->rawGlyphSize.x * fg->rawGlyphSize.y);
 	
 	blit(
 		0, 0, // src x and y offset for the image
-		 (fg->magnitude * .5), (fg->magnitude * .5), // dst offset
+		1, 1, // dst offset
 		rawImgSz.x, rawImgSz.y, // width and height
 		slot->bitmap.pitch, fg->rawGlyphSize.x, // src and dst row widths
 		slot->bitmap.buffer, // source
 		fg->rawGlyph); // destination
 	
-	int dw = fg->rawGlyphSize.x;
-	int dh = fg->rawGlyphSize.y;
-	
-	fg->sdfGlyphSize.x = dw;//floor(((float)dw / (float)fg->oversample) + .5);
-	fg->sdfGlyphSize.y = dh;//floor(((float)dh / (float)fg->oversample) + .5); 
-	
-	
-	/*
-	/// TODO move to multithreaded pass
-	CalcSDF_Software_(fg);
-	
-	// done with the raw data
-	free(fg->rawGlyph);
-	*/
-	
-	/*
-	
-	printf("raw size: %d, %d\n", fg->rawGlyphSize.x, fg->rawGlyphSize.y);
-	printf("sdf size: %d, %d\n", fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
-	printf("bounds: %f,%f, %f,%f\n",
-		fg->sdfBounds.min.x,
-		fg->sdfBounds.min.y,
-		fg->sdfBounds.max.x,
-		fg->sdfBounds.max.y
-		   
-	);
-
-	writePNG("sdf-raw.png", 1, fg->rawGlyph, fg->rawGlyphSize.x, fg->rawGlyphSize.y);
-	writePNG("sdf-pct.png", 1, fg->sdfGlyph, fg->sdfGlyphSize.x, fg->sdfGlyphSize.y);
-	*/
 	
 	return fg;
 }
@@ -880,7 +421,8 @@ void* sdf_thread(void* _fm) {
 		
 		FontGen* fg = VEC_ITEM(&fm->gen, i);
 		printf("calc: '%s':%d:%d %c\n", fg->font->name, fg->bold, fg->italic, fg->code);
-		CalcSDF_Software_(fg);
+
+		sdfgen_new(fg);
 		
 	}
 	
@@ -890,39 +432,23 @@ void* sdf_thread(void* _fm) {
 
 void FontManager_finalize(FontManager* fm) {
 	
+
+	int maxThreads = get_nprocs();
+	pthread_t threads[maxThreads];
 	
-	if(0) { // cpu calculation
-		int maxThreads = get_nprocs();
-		pthread_t threads[maxThreads];
-		
-		for(int i = 0; i < maxThreads; i++) {
-			int ret = pthread_create(&threads[i], NULL, sdf_thread, fm);
-			if(ret) {
-				printf("failed to spawn thread in FontManager\n");
-				exit(1);
-			}
-		}
-		
-		// wait for the work to get done
-		for(int i = 0; i < maxThreads; i++) {
-			pthread_join(threads[i], NULL);
+	for(int i = 0; i < maxThreads; i++) {
+		int ret = pthread_create(&threads[i], NULL, sdf_thread, fm);
+		if(ret) {
+			printf("failed to spawn thread in FontManager\n");
+			exit(1);
 		}
 	}
-	else {
-		// gpu calculation
-		
-		gpu_calc_info gpu;
-		
-		init_gpu_sdf(&gpu, fm->magnitude, fm->maxRawSize.x, fm->maxRawSize.y);	
 	
-		VEC_EACH(&fm->gen, i, fg) {
-		
-			printf("gpucalc: '%s':%d:%d %c\n", fg->font->name, fg->bold, fg->italic, fg->code);
-			CalcSDF_GPU(&gpu, fg);
-		}
-		
-		destroy_gpu_sdf(&gpu);
+	// wait for the work to get done
+	for(int i = 0; i < maxThreads; i++) {
+		pthread_join(threads[i], NULL);
 	}
+
 }
 
 
@@ -990,7 +516,9 @@ void FontManager_addFont2(FontManager* fm, char* name, char bold, char italic, i
 		HT_set(&fm->fonts, name, f);
 	}
 	
-	f->ascender = fontFace->ascender >> 6;
+//	ioRatio = floor(192.0 / 8.0); // HACK
+	
+	f->ascender = (fontFace->ascender >> 6) / genSize;
 	f->descender = fontFace->descender >> 6;
 	f->height = fontFace->height >> 6;
 	
@@ -1105,11 +633,14 @@ void FontManager_createAtlas(FontManager* fm) {
 		c->texNormSize.y = (float)gen->sdfDataSize.y / (float)pot;
 		
 		// BUG: wrong? needs magnitude?
-		c->advance = gen->rawAdvance;
-		c->topLeftOffset.x = (gen->rawBearing.x);// + (float)gen->sdfBounds.min.x;
-		c->topLeftOffset.y = (gen->rawBearing.y);// - (float)gen->sdfBounds.min.y;
+		c->advance = gen->charinfo.advance;
+		c->topLeftOffset.x = (gen->charinfo.topLeftOffset.x);// + (float)gen->sdfBounds.min.x;
+		c->topLeftOffset.y = (gen->charinfo.topLeftOffset.y);// - (float)gen->sdfBounds.min.y;
 		
-		c->size = gen->genSize;
+		// TODO: fix		
+		c->size = 1;// gen->genSize;
+
+
 //		c->genSize.y = gen->sdfDataSize.y;
 		
 //		printf("toff: %f, %f \n", c->texNormOffset.x, c->texNormOffset.y);
@@ -1128,8 +659,8 @@ void FontManager_createAtlas(FontManager* fm) {
 	VEC_PUSH(&fm->atlas, texData);
 	
 	// disabled for debugging
-	//sprintf(buf, "sdf-comp-%ld.png", VEC_LEN(&fm->atlas));
-	//writePNG(buf, 1, texData, pot, pot);
+	sprintf(buf, "sdf-comp-%ld.png", VEC_LEN(&fm->atlas));
+	writePNG(buf, 1, texData, pot, pot);
 	
 	VEC_FREE(&fm->gen);
 	
@@ -1316,35 +847,36 @@ void sdfgen_new(FontGen* fg) {
 
 	char* input = fg->rawGlyph;
 	int in_size_x = fg->rawGlyphSize.x, in_size_y = fg->rawGlyphSize.y; // size of the input image, in input pixels
-	printf("input size: %d,%d\n", in_size_x, in_size_y);
+//	printf("input size: %d,%d\n", in_size_x, in_size_y);
 
-	// out_mag is the size the field is calculated away from the true edge,
-	//   in output pixels
-	int out_mag = 4;
-
-	
 
 	//// ----- Init the Output -----
 
+	// out_mag is the size the field is calculated away from the true edge,
+	//   in output pixels
+	int out_mag = fg->magnitude;
+
 	// number of input pixels inside each output pixel
-	int io_ratio = floor(192.0 / (float)out_mag);
-	printf("io_ratio: %d\n", io_ratio);
+	int io_ratio = fg->ioRatio;
+//	printf("io_ratio: %d\n", io_ratio);
 	
 	
 	// how big the core of the output needs to be, in real-valued output pixels
 	float out_needed_xf = (float)in_size_x / io_ratio; 
 	float out_needed_yf = (float)in_size_y / io_ratio; 
-	printf("out needed: %.2f,%.2f\n", out_needed_xf, out_needed_yf);
+//	printf("out needed: %.2f,%.2f\n", out_needed_xf, out_needed_yf);
 	
 	int out_padding = out_mag;
 	
 	// size of the output image, in output pixels, including padding
 	int out_size_x = ceil(out_needed_xf) + (out_padding * 2);
 	int out_size_y = ceil(out_needed_yf) + (out_padding * 2);
-	printf("outsize: %d,%d\n", out_size_x, out_size_y);
+//	printf("outsize: %d,%d\n", out_size_x, out_size_y);
 	
 	unsigned char* output = malloc(out_size_x * out_size_y * sizeof(output));
-	
+	fg->sdfGlyph = output;
+	fg->sdfGlyphSize.x = out_size_x;
+	fg->sdfGlyphSize.y = out_size_y;
 	
 	//// ----- Geometric Utilities -----
 	
@@ -1364,21 +896,11 @@ void sdfgen_new(FontGen* fg) {
 	// TODO: only the core, non-padded area
 	for(int oy = 0; oy < out_size_y; oy++) {
 	for(int ox = 0; ox < out_size_x; ox++) {
-		
+		// fill the output image with the maximum distance
 		OUTPX(ox, oy) = 0xff;
-		
-		// very wrong
-	//	out_center_cache[OUTLOC(ox, oy)] = INPX(ox, oy);
 		
 	}}
 	
-	
-	
-	/*{
-		static char buf[200];
-		sprintf(buf, "output-center-cache-%d.png", fg->code);
-		writePNG(buf, 1, out_center_cache, out_size_x, out_size_y);
-	}//*/
 	
 	
 	// convert all input values to 0's and 1's
@@ -1396,37 +918,22 @@ void sdfgen_new(FontGen* fg) {
 	// are to pixel centers.   
 	
 	
-	for(int iy = 0; iy < in_size_y; iy++) {
+	// The input image has a 1px border to avoid bounds checking
+	for(int iy = 1; iy < in_size_y - 1; iy++) {
 	
 		
-		for(int ix = 0; ix < in_size_x; ix++) {
+		for(int ix = 1; ix < in_size_x - 1; ix++) {
 			int is_diff = 0;
 			
 			int p = INPX(ix, iy);
 			//if(p == 0) continue; // the center pixel should be the white (foreground) one
 			
-			// TODO: similar check for interior pixels
 			
 			do {
-				if(ix == 0 || iy == 0 || ix == in_size_x - 1 || iy == in_size_y - 1) {
-					if(p == 1) { is_diff = 1; break; }
-				}
-				
-				if(iy > 0) {
-					if(p != INPX(ix, iy - 1)) { is_diff = 1; break; }
-				}
-				
-				if(iy < in_size_y-1) {
-					if(p != INPX(ix, iy + 1)) { is_diff = 1; break; }
-				}	
-				
-				if(ix > 0) {
-					if(p != INPX(ix - 1, iy)) { is_diff = 1; break; }
-				}	
-				
-				if(ix < in_size_x-1) {
-					if(p != INPX(ix + 1, iy)) { is_diff = 1; break; }
-				}	
+				if(p != INPX(ix, iy - 1)) { is_diff = 1; break; }
+				if(p != INPX(ix, iy + 1)) { is_diff = 1; break; }
+				if(p != INPX(ix - 1, iy)) { is_diff = 1; break; }
+				if(p != INPX(ix + 1, iy)) { is_diff = 1; break; }
 				
 			} while(0);		
 			if(!is_diff) continue;
@@ -1444,10 +951,6 @@ void sdfgen_new(FontGen* fg) {
 			
 			for(int oy = out_cy; oy < out_cy+2*out_mag; oy++) { // in output pixels
 			for(int ox = out_cx; ox < out_cx+2*out_mag; ox++) {
-				
-				
-				
-				
 				
 				// The distance should be calculated in input pixels, to the center of the output pixel
 				// The ouput image is padded, so it's possible for output pixels to have negative pixel
@@ -1496,11 +999,11 @@ void sdfgen_new(FontGen* fg) {
 				
 				if(p == 1 && p == p_target) {
 					clamped = d > 64 ? 64 : d; 
-					clamped = 64 - clamped;
+					//clamped = 64 - clamped;
 					
-					existing = 64 - existing;
+					//existing = 64 - existing;
 					//printf("clamped:%d \n", clamped);
-					if(clamped > existing) { 
+					if(clamped < existing) { 
 						OUTPX(ox, oy) = clamped;
 					}
 					
@@ -1513,26 +1016,19 @@ void sdfgen_new(FontGen* fg) {
 						OUTPX(ox, oy) = clamped;
 					}
 				}
-		/*		
+	/*		
 		static uint8_t sdfEncode(float d, int inside, float maxDist) {
-	int o;
-	d = sqrt(d);
-	float norm = d / maxDist;
-	if(inside) norm = -norm;
-	
-	o = (norm * 192) + 64;
-	
-	return o < 0 ? 0 : (o > 255 ? 255 : o);
-}
+			int o;
+			d = sqrt(d);
+			float norm = d / maxDist;
+			if(inside) norm = -norm;
+			
+			o = (norm * 192) + 64;
+			
+			return o < 0 ? 0 : (o > 255 ? 255 : o);
+		}
 	*/							
-				
-				//unsigned char encoded = sdfEncode(d, p, 192);
-				//printf("d: OUT(% d,% d) %f [clamped:%d]\n", ox, oy, d, clamped);
-				
-								
-				
-				
-					
+									
 				
 			}}
 			
@@ -1546,6 +1042,74 @@ void sdfgen_new(FontGen* fg) {
 		sprintf(buf, "new-sdf-output-%d.png", fg->code);
 		writePNG(buf, 1, output, out_size_x, out_size_y);
 	}//*/
+	
+	
+	
+	
+	
+	// find the bounds of the sdf data
+	// first rows
+	for(int y = 0; y < fg->sdfGlyphSize.y; y++) {
+		int hasData = 0;
+		for(int x = 0; x < fg->sdfGlyphSize.x; x++) {
+			hasData += output[x + (y * fg->sdfGlyphSize.x)];
+		}
+		
+		if(hasData / fg->sdfGlyphSize.x < 255) {
+			fg->sdfBounds.min.y = y;
+			break;
+		}
+	}
+	for(int y = fg->sdfGlyphSize.y - 1; y >= 0; y--) {
+		int hasData = 0;
+		for(int x = 0; x < fg->sdfGlyphSize.x; x++) {
+			hasData += output[x + (y * fg->sdfGlyphSize.x)];
+		}
+		
+		if(hasData / fg->sdfGlyphSize.x < 255) {
+			fg->sdfBounds.max.y = y + 1;
+			break;
+		}
+	}
+
+	for(int x = 0; x < fg->sdfGlyphSize.x; x++) {
+		int hasData = 0;
+		for(int y = 0; y < fg->sdfGlyphSize.y; y++) {
+			hasData += output[x + (y * fg->sdfGlyphSize.x)];
+		}
+		
+		if(hasData / fg->sdfGlyphSize.y < 255) {
+			fg->sdfBounds.min.x = x;
+			break;
+		}
+	}
+	for(int x = fg->sdfGlyphSize.x - 1; x >= 0; x++) {
+		int hasData = 0;
+		for(int y = 0; y < fg->sdfGlyphSize.y; y++) {
+			hasData += output[x + (y * fg->sdfGlyphSize.x)];
+		}
+		
+		if(hasData / fg->sdfGlyphSize.y < 255) {
+			fg->sdfBounds.max.x = x + 1;
+			break;
+		}
+	}
+	
+	fg->sdfDataSize.x = fg->sdfBounds.max.x - fg->sdfBounds.min.x;
+	fg->sdfDataSize.y = fg->sdfBounds.max.y - fg->sdfBounds.min.y;
+	
+	free(fg->rawGlyph);
+	
+	
+	// this is where to draw the quad relative to the current cursor position
+	// it must subtract the empty margins and the sdf padding pixels 
+	float fontScaler = (float)out_mag / (float)fg->nominalRawSize; // the ratio of output pixels to nominal font pixels 
+	fg->charinfo.topLeftOffset.x = (fg->sdfBounds.min.x - out_padding) * fontScaler;
+	fg->charinfo.topLeftOffset.y = (fg->sdfBounds.max.y - out_padding) * fontScaler;
+	
+	fg->charinfo.advance = (float)fg->rawAdvance / (float)fg->nominalRawSize;
+	
+	printf("tl: %f,%f   adv: %f\n",fg->charinfo.topLeftOffset.x, fg->charinfo.topLeftOffset.y, fg->charinfo.advance);
 	
 	printf("time elapsed: %fms\n", (getCurrentTime() - start_time) * 1000);
 

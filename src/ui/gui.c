@@ -316,6 +316,11 @@ void gui_drawTextLineAdv(
 			v->pos.b = off.y + hoff + ci->size * fontsize - ci->topLeftOffset.y * fontsize;
 			v->pos.r = off.x + alignoff + adv + ci->size * fontsize + ci->topLeftOffset.x * fontsize;
 			
+//			printf("huh... %f, %f\n", - ci->topLeftOffset.y, fontsize);
+			printf("huh... %f\n", off.x + alignoff + adv + ci->topLeftOffset.x * fontsize);
+			printf("adv:%f  tlo: [%f,%f]  off: [%f,%f, %f,%f]  pos: [%f,%f,%f,%f]\n", 
+				adv, ci->topLeftOffset.x, ci->topLeftOffset.x, off.x, off.y, hoff, alignoff, v->pos.t,v->pos.l,v->pos.b,v->pos.r);
+			
 			v->guiType = 1; // text
 			
 			v->texOffset1.x = offx * 65535.0;
