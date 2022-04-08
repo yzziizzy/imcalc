@@ -373,13 +373,14 @@ static FontGen* addChar(int magnitude, FT_Face* ff, int code, int fontSize, char
 		return NULL;
 	}
 	
+	printf("[%c] FT pixel size set to %d\n", code, fontSize);
 	
 	err = _FT_Load_Char(*ff, code, FT_LOAD_DEFAULT | FT_LOAD_MONOCHROME);
 	
 	//f2f(slot->metrics.horiBearingY);
 	
 	// draw character to freetype's internal buffer and copy it here
-	_FT_Load_Char(*ff, code, FT_LOAD_RENDER);
+	_FT_Load_Char(*ff, code, FT_LOAD_RENDER /* | FT_LOAD_TARGET_MONO*/);
 	// slot is a pointer
 	slot = (*ff)->glyph;
 	
@@ -393,6 +394,7 @@ static FontGen* addChar(int magnitude, FT_Face* ff, int code, int fontSize, char
 	
 	fg->rawGlyphSize.x = (slot->metrics.width >> 6) + 2; 
 	fg->rawGlyphSize.y = (slot->metrics.height >> 6) + 2; 
+	printf("[%c] FT glyph size: %d,%d\n", code, fg->rawGlyphSize.x, fg->rawGlyphSize.y);
 	
 	// the raw glyph is copied to the middle of a larger buffer to make the sdf algorithm simpler 
 	fg->rawGlyph = calloc(1, sizeof(*fg->rawGlyph) * fg->rawGlyphSize.x * fg->rawGlyphSize.y);
@@ -632,13 +634,13 @@ void FontManager_createAtlas(FontManager* fm) {
 		c->texNormSize.x = (float)gen->sdfDataSize.x / (float)pot;
 		c->texNormSize.y = (float)gen->sdfDataSize.y / (float)pot;
 		
-		// BUG: wrong? needs magnitude?
 		c->advance = gen->charinfo.advance;
 		c->topLeftOffset.x = (gen->charinfo.topLeftOffset.x);// + (float)gen->sdfBounds.min.x;
 		c->topLeftOffset.y = (gen->charinfo.topLeftOffset.y);// - (float)gen->sdfBounds.min.y;
+		c->bottomRightOffset.x = (gen->charinfo.bottomRightOffset.x);// - (float)gen->sdfBounds.min.y;
+		c->bottomRightOffset.y = (gen->charinfo.bottomRightOffset.y);// - (float)gen->sdfBounds.min.y;
 		
 		// TODO: fix		
-		c->size = 1;// gen->genSize;
 
 
 //		c->genSize.y = gen->sdfDataSize.y;
@@ -1100,16 +1102,77 @@ void sdfgen_new(FontGen* fg) {
 	
 	free(fg->rawGlyph);
 	
+	float fontScaler = (float)out_mag / (float)fg->nominalRawSize; // the ratio of output pixels to nominal font pixels 
+	
+	/* // somehow broken
 	
 	// this is where to draw the quad relative to the current cursor position
 	// it must subtract the empty margins and the sdf padding pixels 
-	float fontScaler = (float)out_mag / (float)fg->nominalRawSize; // the ratio of output pixels to nominal font pixels 
+	
 	fg->charinfo.topLeftOffset.x = (fg->sdfBounds.min.x - out_padding) * fontScaler;
 	fg->charinfo.topLeftOffset.y = (fg->sdfBounds.max.y - out_padding) * fontScaler;
+	fg->charinfo.bottomRightOffset.x = fg->charinfo.topLeftOffset.x + (fg->sdfDataSize.x + out_padding + out_padding) * fontScaler;
+	fg->charinfo.bottomRightOffset.y = fg->charinfo.topLeftOffset.y + (fg->sdfDataSize.y + out_padding + out_padding) * fontScaler;
+	*/
+	
+	//fg->charinfo.topLeftOffset.x = 0;
+	//fg->charinfo.topLeftOffset.y = 0;
+//	fg->charinfo.bottomRightOffset.x = ((float)fg->sdfGlyphSize.x * (float)out_mag) / (float)fg->nominalRawSize;
+//	fg->charinfo.bottomRightOffset.y = ((float)fg->sdfGlyphSize.y * (float)out_mag) / (float)fg->nominalRawSize;
+	//fg->charinfo.bottomRightOffset.x = 1.0 * (float)fg->sdfDataSize.x / (float)fg->sdfDataSize.y;/// (float)fg->nominalRawSize;
+	
+	// if the input glyph was rendered at em 1.0, then:
+	
+	// size of the full output image in input pixels
+	float i_out_size_x = out_size_x * io_ratio;
+	float i_out_size_y = out_size_y * io_ratio;
+	
+	// amount of padding pixels in the output image per edge, in input pixels
+	float i_padding = io_ratio * out_padding;
+	
+	// size of the interior portion of the output image, sans padding, in input pixels
+	float i_out_interior_x = i_out_size_x - (i_padding * 2);
+	float i_out_interior_y = i_out_size_y - (i_padding * 2);
+	
+	// the output image is usually slightly larger than the input image scaled down
+	//   because the input image is seldom an exact multiple of io_ratio
+	// this is the extra pixels due to the fraction
+	float i_out_extra_x = i_out_interior_x - in_size_x;
+	float i_out_extra_y = i_out_interior_y - in_size_y;
+	
+	
+	// the real image edge is i_padding inward.
+	// the data edge is inward more due to trimming empty pixels
+	float i_out_data_edge_min_x = i_padding + fd->sdfBounds.min.x * io_ratio;
+	float i_out_data_edge_min_y = i_padding + fd->sdfBounds.min.y * io_ratio;
+	
+	// the real image bounds is also inward, but including the extra fractional pixels
+	float i_out_data_edge_max_x = i_padding + fd->sdfBounds.max.x * io_ratio;
+	float i_out_data_edge_max_y = i_padding + fd->sdfBounds.max.y * io_ratio;
+	
+	// the size of the data, in input pixels
+	float i_data_size_x = i_out_data_edge_max_x - i_out_data_edge_min_x;
+	float i_data_size_y = i_out_data_edge_max_y - i_out_data_edge_min_y;
+	
+	// the glyph origin is:
+	//   bearing_y down from the top of the input image 
+	//   bearing_x left from the left edge of the input image 
+	
+	// origin location, in input pixels, relative to the input image's bottom left corner (opposite of the gl)
+	// the input image has 1px of padding on all sides
+	float ii_origin_x = -fg->rawBearing.x - 1;
+	float ii_origin_y = in_size - fg->rawBearing.y + 1; 
+	
+	
+	
+	
+//	fg->charinfo.bottomRightOffset.y = 1.0;
+	
 	
 	fg->charinfo.advance = (float)fg->rawAdvance / (float)fg->nominalRawSize;
 	
 	printf("tl: %f,%f   adv: %f\n",fg->charinfo.topLeftOffset.x, fg->charinfo.topLeftOffset.y, fg->charinfo.advance);
+	printf("qsize: %f,%f  rawsz:%d, inputsz:%d,%d\n",fg->charinfo.bottomRightOffset.x, fg->charinfo.bottomRightOffset.y, fg->nominalRawSize, fg->rawGlyphSize.x, fg->rawGlyphSize.y);
 	
 	printf("time elapsed: %fms\n", (getCurrentTime() - start_time) * 1000);
 

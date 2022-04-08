@@ -388,6 +388,7 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 //	printf("\n");
 	
 	sort = getCurrentTime();
+	gm->elementCount = 0;
 	
 //	
 //	gm->elementCount = 0;
@@ -418,12 +419,12 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	
 	// Rendering code
 	
-	static long acc = 0;
+	static long acc = 8;
 	
 	
 	
 	gm->curClip = (AABB2){0,0, pfp->dp->targetSize.x, pfp->dp->targetSize.y};
-	gm->curZ = 1.0;
+	gm->curZ = 2.0;
 	
 	
 //	GUI_BoxFilled_(gm, (Vector2){20,20}, (Vector2){200,20},
@@ -435,8 +436,10 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 //	GUI_Box_(gm, (Vector2){20,20}, (Vector2){20,20}, 8, &((Color4){0,1,1,1}));
 	
 	char* num = sprintfdup("%ld", acc);
-	GUI_TextLine_(gm, num, strlen(num), (Vector2){20,2}, "Arial", .5, &((Color4){1,1,1,1}));
+	GUI_TextLine_(gm, num, strlen(num), (Vector2){200,10}, "Arial", 100, &((Color4){1,1,1,1}));
 	free(num);
+	
+	gm->curZ = 1.0;
 	
 	float sz = 40;
 	float pad = 5;

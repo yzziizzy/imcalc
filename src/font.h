@@ -34,6 +34,7 @@ struct charInfo {
 	
 	float advance; // horizontal distance to advance after this char
 	Vector2 topLeftOffset; // offset from the baseline to the top left vertex of the *quad*
+	Vector2 bottomRightOffset;
 	
 	// BROKEN: wire through the dimensions of the character
 	//float size; // wtf?
