@@ -419,7 +419,7 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	
 	// Rendering code
 	
-	static long acc = 8;
+	static long acc = 812;
 	
 	
 	
@@ -435,10 +435,13 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	
 //	GUI_Box_(gm, (Vector2){20,20}, (Vector2){20,20}, 8, &((Color4){0,1,1,1}));
 	
-	char* num = sprintfdup("%ld", acc);
-	GUI_TextLine_(gm, num, strlen(num), (Vector2){200,10}, "Arial", 100, &((Color4){1,1,1,1}));
+	char* num = sprintfdup("(g.%ld", acc);
+	GUI_TextLine_(gm, num, strlen(num), (Vector2){200,150}, "Arial", 100, &((Color4){1,1,1,1}));
 	free(num);
 	
+	//GUI_Box_(gm, (Vector2){200,150}, (Vector2){200,2}, 2, &((Color4){1,0,0,1}));
+	
+		
 	gm->curZ = 1.0;
 	
 	float sz = 40;

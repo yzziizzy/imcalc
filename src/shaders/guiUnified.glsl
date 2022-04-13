@@ -295,22 +295,34 @@ void main(void) {
 		float a;
 		
 		
+		d = 1.0 - d;
+		if(d < .25) { // inside the glyph
+			d = -d;
+		}
+		
+//		out_Color = vec4(d,d,d, 1);
+//		return;
+		
+		a = smoothstep(0.70, 0.80, abs(d));
+		/*
 		if(d > .75) {
-			d = 1;// (d - .75) * -4;
+			d = (d - .75) * -4.0;
 		}
 		else {
-			d = (d / 3) * 4;
+			d = (d / 3.0) * 4.0;
 		}
-		d = 1 - d;
+		//*/
+//		d = 1.0 - d;
 
-//		a = smoothstep(0.35, 0.9, abs(d));
-		a = smoothstep(0.35, 0.85, abs(d));
-// 		a = step(0.65, abs(d));
-	//	a = abs(d);
+//		a = smoothstep(0.74, 0.76, abs(d));
+	//	a = smoothstep(0.35, 0.76, abs(d));
+// 	
+//		a = step(0.65, abs(d));
+//		a = abs(d);
 		
 		if(a < 0.01) {
  			out_Color = vec4(gs_tex.xy, 0, 1);
- 			return; // show the overdraw
+ 		//	return; // show the overdraw
 			discard;
 		};
 		

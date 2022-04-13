@@ -44,7 +44,7 @@ FontManager* FontManager_alloc(GUI_GlobalSettings* gs) {
 	
 	pcalloc(fm);
 	HT_init(&fm->fonts, 4);
-	fm->magnitude = 8;
+	fm->magnitude = 6;
 	fm->maxAtlasSize = 512;
 
 // BUG: split out gl init operations now
@@ -76,7 +76,7 @@ void FontManager_init(FontManager* fm, GUI_GlobalSettings* gs) {
 		i = 0;
 		while(gs->fontList[i] != NULL) {
 			// printf("building font: %s\n", gs->Buffer_fontList[i]);
-			FontManager_addFont(fm, gs->fontList[i], 512);
+			FontManager_addFont(fm, gs->fontList[i], 1024);
 			i++;
 		}
 		FontManager_finalize(fm);
@@ -110,7 +110,7 @@ GUIFont* FontManager_findFont(FontManager* fm, char* name) {
 // new font rendering info
 //static char* defaultCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 `~!@#$%^&*()_+|-=\\{}[]:;<>?,./'\"";
 //static char* defaultCharset = "Q";
-static char* defaultCharset = "0123456789.+-()";
+static char* defaultCharset = "g0123456789.+-()";
 
 // 16.16 fixed point to float conversion
 static float f2f(int32_t i) {
@@ -860,7 +860,7 @@ void sdfgen_new(FontGen* fg) {
 
 	// number of input pixels inside each output pixel
 	int io_ratio = fg->ioRatio;
-//	printf("io_ratio: %d\n", io_ratio);
+	printf("io_ratio: %d\n", io_ratio);
 	
 	
 	// how big the core of the output needs to be, in real-valued output pixels
@@ -928,14 +928,17 @@ void sdfgen_new(FontGen* fg) {
 			int is_diff = 0;
 			
 			int p = INPX(ix, iy);
-			//if(p == 0) continue; // the center pixel should be the white (foreground) one
+			//if(p == 1) continue; // the center pixel should be the white (foreground) one
+			
+			int t_off_x = 0;
+			int t_off_y = 0;
 			
 			
 			do {
-				if(p != INPX(ix, iy - 1)) { is_diff = 1; break; }
-				if(p != INPX(ix, iy + 1)) { is_diff = 1; break; }
-				if(p != INPX(ix - 1, iy)) { is_diff = 1; break; }
-				if(p != INPX(ix + 1, iy)) { is_diff = 1; break; }
+				if(p != INPX(ix, iy - 1)) { is_diff = 1; t_off_y = -1; break; }
+				if(p != INPX(ix, iy + 1)) { is_diff = 1; t_off_y =  1; break; }
+				if(p != INPX(ix - 1, iy)) { is_diff = 1; t_off_x = -1; break; }
+				if(p != INPX(ix + 1, iy)) { is_diff = 1; t_off_x =  1; break; }
 				
 			} while(0);		
 			if(!is_diff) continue;
@@ -966,8 +969,8 @@ void sdfgen_new(FontGen* fg) {
 				float i_cur_out_y = out_cy * io_ratio;
 				
 				// input pixels from the output image's edge to the test pixel
-				float i_from_out_edge_x = ix + i_padding;  
-				float i_from_out_edge_y = iy + i_padding;  
+				float i_from_out_edge_x = ix + i_padding/* + t_off_x*/;  
+				float i_from_out_edge_y = iy + i_padding/* + t_off_y*/;  
 				
 				// input pixels from the output image's edge to the output cell center being updated
 				float i_out_center_x = (ox) * io_ratio + io_center_off;
@@ -979,19 +982,17 @@ void sdfgen_new(FontGen* fg) {
 				float dy = (i_out_center_y - i_from_out_edge_y);
 				float d = sqrt(dx * dx + dy * dy);
 				
-				float norm = d / 192.0f;
-				float scaled = norm * 256;
-				int clamped = d > 192 ? 192 : d;
+				// normalize d
+//				d = d > 191 ? 191;
+				d = d / 192.0f;
 				
-				
-				// output encode the distance, overwrite if lower
-				
+							
 				int existing = OUTPX(ox, oy);
-				
+
 				// test pixel is the one with the found edge
 				// target pixel is the input pixel under the center of the output pixel being updated
 				// p = test pixel color
-				int p_target = -1; // everything in the padding area is black
+				int p_target = 0; // everything in the padding area is black
 				
 				int i_real_ox = i_out_center_x - i_padding;
 				int i_real_oy = i_out_center_y - i_padding;
@@ -999,9 +1000,81 @@ void sdfgen_new(FontGen* fg) {
 					p_target = INPX(i_real_ox, i_real_oy);
 				}
 				
+				// output pixels that are inside the glyph should have values from 192 to 255
+				// output pixels that are outside the glyph should have values from 0 to 191
+				int clamped;
+				
+				
+//				if(inside) norm = -norm;
+			
+//			o = (norm * 192) + 64;
+			
+//			return o < 0 ? 0 : (o > 255 ? 255 : o);
+			
+			
+				
+				if(p == 0) { // this is the background pixel next to an edge
+					if(p_target != 0) { // target pixel is inside the glyph
+						d = -d;
+						int o = (d * 192) + 64;
+						o = o < 0 ? 0 : (o > 255 ? 255 : o);
+						
+						if(o > existing || existing == 0xff) {
+							
+							OUTPX(ox, oy) = (unsigned char)o;
+						}
+						
+//						OUTPX(ox, oy) = 0x00;
+					}
+				}
+				else { // this is the foreground pixel next to an edge
+					if(p_target == 0) { // target is outside the glyph
+						int o = (d * 192) + 64;
+						o = o < 0 ? 0 : (o > 255 ? 255 : o);
+						
+						if(o < existing) {
+							
+							OUTPX(ox, oy) = (unsigned char)o;
+						}
+						
+//						OUTPX(ox, oy) = 0xff;
+					}
+					else { // target is inside the glyph
+					
+						d = -d;
+						int o = (d * 192) + 64;
+						o = o < 0 ? 0 : (o > 255 ? 255 : o);
+						
+						if(o > existing || existing == 0xff) {
+							
+							OUTPX(ox, oy) = (unsigned char)o;
+						}
+//						OUTPX(ox, oy) = 0x8f;
+					
+					}
+				}
+				
+				
+				
+				
+//				float norm = d / 192.0f;
+//				float scaled = norm * 256;
+//				int clamped = d > 192 ? 192 : d;
+				
+				
+				// output encode the distance, overwrite if lower
+				
+				
+				
+				
+				
+//				if(p == p_target) {
+			
+//				}
+	
+				/*
 				if(p == 1 && p == p_target) {
-					clamped = d > 64 ? 64 : d; 
-					//clamped = 64 - clamped;
+					
 					
 					//existing = 64 - existing;
 					//printf("clamped:%d \n", clamped);
@@ -1011,13 +1084,17 @@ void sdfgen_new(FontGen* fg) {
 					
 				}
 				else {
-					clamped += 64;	
+//					clamped += 64;	
+					
+					//clamped = d > 64 ? 64 : d; 
+					//clamped = 64 - clamped;
 					
 					if(clamped < existing) { 
-						if(clamped < 64) printf("oops\n");
-						OUTPX(ox, oy) = clamped;
+						//if(clamped < 64) printf("oops\n");
+						OUTPX(ox, oy) = 64;//clamped;
 					}
 				}
+				*/
 	/*		
 		static uint8_t sdfEncode(float d, int inside, float maxDist) {
 			int o;
@@ -1143,12 +1220,12 @@ void sdfgen_new(FontGen* fg) {
 	
 	// the real image edge is i_padding inward.
 	// the data edge is inward more due to trimming empty pixels
-	float i_out_data_edge_min_x = i_padding + fd->sdfBounds.min.x * io_ratio;
-	float i_out_data_edge_min_y = i_padding + fd->sdfBounds.min.y * io_ratio;
+	float i_out_data_edge_min_x = i_padding + fg->sdfBounds.min.x * io_ratio;
+	float i_out_data_edge_min_y = i_padding + fg->sdfBounds.min.y * io_ratio;
 	
 	// the real image bounds is also inward, but including the extra fractional pixels
-	float i_out_data_edge_max_x = i_padding + fd->sdfBounds.max.x * io_ratio;
-	float i_out_data_edge_max_y = i_padding + fd->sdfBounds.max.y * io_ratio;
+	float i_out_data_edge_max_x = i_padding + fg->sdfBounds.max.x * io_ratio;
+	float i_out_data_edge_max_y = i_padding + fg->sdfBounds.max.y * io_ratio;
 	
 	// the size of the data, in input pixels
 	float i_data_size_x = i_out_data_edge_max_x - i_out_data_edge_min_x;
@@ -1158,16 +1235,45 @@ void sdfgen_new(FontGen* fg) {
 	//   bearing_y down from the top of the input image 
 	//   bearing_x left from the left edge of the input image 
 	
+	// the input and output images are y-down; 0,0 is the top left corner
+	
 	// origin location, in input pixels, relative to the input image's bottom left corner (opposite of the gl)
 	// the input image has 1px of padding on all sides
-	float ii_origin_x = -fg->rawBearing.x - 1;
-	float ii_origin_y = in_size - fg->rawBearing.y + 1; 
+	float ii_origin_x = -fg->rawBearing.x + 1;
+	float ii_origin_y = in_size_y - fg->rawBearing.y + 1; 
+	
+	// origin location, in input pixels, relative to the output image's bottom left corner
+	float io_origin_x = ii_origin_x + i_padding;
+	float io_origin_y = ii_origin_y + i_padding;
+	
+	///// origin location, in input pixels, relative to the output image's top left corner
+	//float io_origin_x = ii_origin_x + i_padding;
+//	float io_origin_y = ii_origin_y + i_padding;
+	
+	
+	// location of the top left corner of the output image relative to the origin
+	float io_lt_from_origin_x = -io_origin_x;
+	float io_lt_from_origin_y = io_origin_y - i_data_size_y; // hackily wrong, probably
+	
+	// location of the data's top left corner relative to the origin
+	//float iod_tl_from_origin_x = ;
+	
+	printf("io_tl: %f,%f\n", io_lt_from_origin_x,io_lt_from_origin_y);
 	
 	
 	
+	fg->charinfo.topLeftOffset.x = io_lt_from_origin_x;
+	fg->charinfo.topLeftOffset.y = io_lt_from_origin_y;
+	
+	fg->charinfo.bottomRightOffset.x = fg->charinfo.topLeftOffset.x + i_data_size_x;
+	fg->charinfo.bottomRightOffset.y = fg->charinfo.topLeftOffset.y + i_data_size_y;
 	
 //	fg->charinfo.bottomRightOffset.y = 1.0;
 	
+	fg->charinfo.topLeftOffset.x /= (float)fg->nominalRawSize;
+	fg->charinfo.topLeftOffset.y /= (float)fg->nominalRawSize;
+	fg->charinfo.bottomRightOffset.x /= (float)fg->nominalRawSize;
+	fg->charinfo.bottomRightOffset.y /= (float)fg->nominalRawSize;
 	
 	fg->charinfo.advance = (float)fg->rawAdvance / (float)fg->nominalRawSize;
 	
@@ -1175,7 +1281,6 @@ void sdfgen_new(FontGen* fg) {
 	printf("qsize: %f,%f  rawsz:%d, inputsz:%d,%d\n",fg->charinfo.bottomRightOffset.x, fg->charinfo.bottomRightOffset.y, fg->nominalRawSize, fg->rawGlyphSize.x, fg->rawGlyphSize.y);
 	
 	printf("time elapsed: %fms\n", (getCurrentTime() - start_time) * 1000);
-
 }
 
 
