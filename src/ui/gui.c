@@ -286,6 +286,11 @@ void gui_drawTextLineAdv(
 		float txtw = gui_getTextLineWidth(gm, font, fontsize, txt, charCount);
 		alignoff = -(txtw - sz.x);
 	}
+	else if(align == GUI_TEXT_ALIGN_CENTER) {
+	
+		float txtw = gui_getTextLineWidth(gm, font, fontsize, txt, charCount);
+		alignoff = ((sz.x - txtw) / 2.0);
+	}
 	
 	// BUG: the problem is (Vector2){0,0} here
 	float maxAdv = sz.x;
@@ -406,6 +411,8 @@ void gui_drawVCenteredTextLine(
 	
 	gui_drawTextLine(gm, (Vector2){tl.x, tl.y + b}, sz, clip, color, z, txt, charCount);
 }
+
+
 
 
 

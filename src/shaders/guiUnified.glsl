@@ -303,7 +303,7 @@ void main(void) {
 //		out_Color = vec4(d,d,d, 1);
 //		return;
 		
-		a = smoothstep(0.70, 0.80, abs(d));
+		a = smoothstep(0.65, 0.85, abs(d));
 		/*
 		if(d > .75) {
 			d = (d - .75) * -4.0;

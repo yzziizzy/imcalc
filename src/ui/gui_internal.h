@@ -63,6 +63,18 @@ void GUI_TextLine_(
 	Color4* color
 );
 
+// no wrapping
+void GUI_TextLineCentered_(
+	GUIManager* gm, 
+	char* text, 
+	size_t textLen, 
+	Vector2 tl, 
+	Vector2 sz, 
+	char* fontName, 
+	float size, 
+	Color4* color
+);
+
 
 
 
@@ -187,7 +199,6 @@ void gui_drawVCenteredTextLine(
 	char* txt, 
 	size_t charCount
 );
-
 
 
 

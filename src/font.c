@@ -72,7 +72,7 @@ void FontManager_init(FontManager* fm, GUI_GlobalSettings* gs) {
 	}
 
 
-	if(1 || atlas_dirty) {
+	if(/*1 ||*/ atlas_dirty) {
 		i = 0;
 		while(gs->fontList[i] != NULL) {
 			// printf("building font: %s\n", gs->Buffer_fontList[i]);
@@ -108,9 +108,9 @@ GUIFont* FontManager_findFont(FontManager* fm, char* name) {
 
 
 // new font rendering info
-//static char* defaultCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 `~!@#$%^&*()_+|-=\\{}[]:;<>?,./'\"";
+static char* defaultCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 `~!@#$%^&*()_+|-=\\{}[]:;<>?,./'\"";
 //static char* defaultCharset = "Q";
-static char* defaultCharset = "g0123456789.+-()";
+//static char* defaultCharset = "g0123456789.+-*/()";
 
 // 16.16 fixed point to float conversion
 static float f2f(int32_t i) {

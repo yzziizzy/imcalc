@@ -39,7 +39,7 @@ int GUI_Button_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* text) {
 	}
 	
 	gm->curZ += 0.01;
-	GUI_TextLine_(gm, text, strlen(text), tl, "Arial", 20, C(.8,.8,.8));
+	GUI_TextLineCentered_(gm, text, strlen(text), tl, sz, "Arial", 20, C(.8,.8,.8));
 	gm->curZ -= 0.01;
 	
 	return result;
@@ -85,6 +85,27 @@ void GUI_TextLine_(
 		gm->curZ,
 		text, textLen
 	);
+}
+
+// no wrapping
+void GUI_TextLineCentered_(
+	GUIManager* gm, 
+	char* text, 
+	size_t textLen, 
+	Vector2 tl, 
+	Vector2 sz, 
+	char* fontName, 
+	float size, 
+	Color4* color
+) {
+	GUIFont* font = GUI_FindFont(gm, fontName);
+	if(!font) font = gm->defaults.font;
+	
+	
+	float b = sz.y - ((sz.y - size) / 2);
+	
+	
+	gui_drawTextLineAdv(gm, (Vector2){tl.x, tl.y + b}, sz, &gm->curClip, color, font, size, GUI_TEXT_ALIGN_CENTER, gm->curZ, text, textLen);
 }
 
 
