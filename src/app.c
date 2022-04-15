@@ -65,7 +65,7 @@ void resize_callback(XStuff* xs, void* gm_) {
 	GUIHeader_TriggerEvent(gm->root, &gev);*/
 }
 
-static struct child_process_info* cc;
+
 
 // nothing in here can use opengl at all.
 void initApp(XStuff* xs, AppState* as, int argc, char* argv[]) {
@@ -116,7 +116,6 @@ void initApp(XStuff* xs, AppState* as, int argc, char* argv[]) {
 
 	as->frameCount = 0;
 	
-	as->debugMode = 0;
 	
 	int ww, wh;
 	ww = xs->winAttr.width;
@@ -165,6 +164,7 @@ void initAppGL(XStuff* xs, AppState* as) {
 	
 	initTextures();
 }
+
 
 Vector2i viewWH = {
 	.x = 0,

@@ -35,9 +35,6 @@ typedef struct PerFrameUniforms {
 
 typedef struct AppState {
 	
-	char* dataDir;
-	char* worldDir;
-	
 	AppScreen screen;
 	
 	GlobalSettings globalSettings;
@@ -57,16 +54,9 @@ typedef struct AppState {
 // 	Vector3 cursorPos;
 	int cursorIndex;
 
-	Vector2 mouseDownPos;
-	
-	int debugMode;
-	
-	float zoom;
 	
 	TextureAtlas* ta;
 
-	InputFocusStack ifs;
-	InputEventHandler* defaultInputHandlers;
 	
 	double lastFrameTime; // frameTime from the previous frame
 	double lastFrameDrawTime; // the cost of rendering the previous frame, minus any sleeping
@@ -77,12 +67,7 @@ typedef struct AppState {
 	// performance counters
 	struct {
 		double preframe;
-		double selection;
 		double draw;
-		double decal;
-		double light;
-		double shade;
-		
 	} perfTimes;
 	
 	struct {
@@ -96,31 +81,9 @@ typedef struct AppState {
 	
 } AppState;
 
-struct child_pty_info {
-	int pid;
-	int pty;
-};
-
-struct child_process_info {
-	int pid;
-	int child_stdin;
-	int child_stdout;
-	int child_stderr;
-	FILE* f_stdin;
-	FILE* f_stdout;
-	FILE* f_stderr;
-};
 
 
-void AppState_ExecProcess(AppState* as, char* execPath, char* args[]);
-struct child_process_info* AppState_ExecProcessPipe(char* execPath, char* args[]);
-struct child_pty_info* AppState_ExecProcessPTY(AppState* as, char* execPath, char* args[]);
 
-
-void execProcessPipe_buffer(char** args, char** buffer_out, size_t* size_out/*,int* code_out*/);
-char* execProcessPipe_charpp(char** args, char*** charpp_out, size_t* n_out/*,int* code_out*/);
-void execProcessPipe_bufferv(char*** args, char** buffer_out, size_t* size_out/*,int** code_out*/);
-char* execProcessPipe_charppv(char*** args, char*** charpp_out, size_t* n_out/*,int** code_out*/);
 
 
 void initApp(XStuff* xs, AppState* gs, int argc, char* argv[]);

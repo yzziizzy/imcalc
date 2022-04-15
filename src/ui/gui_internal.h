@@ -209,6 +209,16 @@ int GUI_MouseWentDown(GUIManager* gm, int button);
 // returns true if clicked
 int GUI_Button_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* text);
 
+// returns true if toggled on
+int GUI_ToggleButton_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* text, int* state);
+
+// returns true if checked
+int GUI_Checkbox_(GUIManager* gm, void* id, Vector2 tl, char* label, int* state);
+
+// returns true if *this* radio button is active
+int GUI_RadioButton_(GUIManager* gm, void* id, Vector2 tl, char* label, void** state, int isDefault);
+
+
 void GUI_Box_(GUIManager* gm, Vector2 tl, Vector2 sz, float width, Color4* borderColor);
 
 void GUI_BoxFilled_(
@@ -220,7 +230,15 @@ void GUI_BoxFilled_(
 	Color4* bgColor
 );
 
-	
+void GUI_CircleFilled_(
+	GUIManager* gm, 
+	Vector2 center, 
+	float radius, 
+	float borderWidth, 
+	Color4* borderColor, 
+	Color4* bgColor
+);
+
 // no wrapping
 void GUI_TextLine_(
 	GUIManager* gm, 

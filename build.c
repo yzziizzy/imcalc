@@ -25,6 +25,7 @@ char* sources[] = {
 	"src/app.c",
 	"src/c_json/json.c",
 	"src/c3dlas/c3dlas.c",
+	"src/calc.c",
 	"src/clipboard.c",
 	"src/dumpImage.c",
 	"src/fbo.c",

@@ -226,6 +226,8 @@ typedef struct GUIManager {
 	// immediate mode stuff
 	AABB2 curClip;
 	float curZ;
+	float fontSize;
+	float checkboxBoxSize;
 	
 	int mouseWentUp;
 	int mouseWentDown;
@@ -236,6 +238,7 @@ typedef struct GUIManager {
 	// per-frame event queue
 	VEC(GUIEvent) events;
 	
+	VEC(int) keysReleased;
 	
 	// ---------------
 	
