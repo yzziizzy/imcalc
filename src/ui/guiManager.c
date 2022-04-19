@@ -26,12 +26,10 @@ GUIManager* GUIManager_alloc(GUI_GlobalSettings* gs) {
 	
 	GUIManager_init(gm, gs);
 	
+	
+	
 	return gm;
 }
-
-
-
-
 
 // _init is always called before _initGL
 void GUIManager_init(GUIManager* gm, GUI_GlobalSettings* gs) {
@@ -45,9 +43,15 @@ void GUIManager_init(GUIManager* gm, GUI_GlobalSettings* gs) {
 	
 	gm->maxInstances = gs->maxInstances;
 	
-	gm->elementCount = 0;
-	gm->elementAlloc = 2048;
-	gm->elemBuffer = calloc(1, sizeof(*gm->elemBuffer) * gm->elementAlloc);
+	gm->vertCount = 0;
+	gm->vertAlloc = 2048;
+	gm->vertBuffer = calloc(1, sizeof(*gm->vertBuffer) * gm->vertAlloc);
+	
+	
+	gm->windowHeap.alloc = 16;
+	gm->windowHeap.buf = calloc(1, gm->windowHeap.alloc * sizeof(*gm->windowHeap.buf));
+	gm->rootWin = GUIWindow_new(gm, 0);
+	
 	
 	gm->fm = FontManager_alloc(gs);
 	
@@ -219,6 +223,30 @@ void GUIManager_initGL(GUIManager* gm) {
 
 
 
+GUIWindow* GUIWindow_new(GUIManager* gm, GUIWindow* parent) {
+	if(gm->windowHeap.cnt >= gm->windowHeap.alloc) {
+		gm->windowHeap.alloc *= 2;
+		gm->windowHeap.buf = realloc(gm->windowHeap.buf, gm->windowHeap.alloc * sizeof(*gm->windowHeap.buf));
+		memset(gm->windowHeap.buf + gm->windowHeap.cnt, 0, (gm->windowHeap.alloc - gm->windowHeap.cnt) * sizeof(*gm->windowHeap.buf)); 
+	}
+	
+	
+	GUIWindow* w = &gm->windowHeap.buf[gm->windowHeap.cnt++];
+	
+	w->parent = parent;
+	w->vertCount = 0;
+		
+	if(w->vertAlloc == 0) {
+		w->vertAlloc = 32;
+		w->vertBuffer = calloc(1, w->vertAlloc * sizeof(*w->vertBuffer));
+	}
+	
+	VEC_TRUNC(&w->children);
+		
+	return w;
+}
+
+
 
 void GUIManager_SetMainWindowTitle(GUIManager* gm, char* title) {
 	if(gm->windowTitleSetFn) gm->windowTitleSetFn(gm->windowTitleSetData, title);
@@ -235,35 +263,30 @@ void GUIManager_SetCursor(GUIManager* gm, int cursor) {
 
 
 
-GUIUnifiedVertex* GUIManager_checkElemBuffer(GUIManager* gm, int count) {
-	if(gm->elementAlloc < gm->elementCount + count) {
-		gm->elementAlloc = MAX(gm->elementAlloc * 2, gm->elementAlloc + count);
-		gm->elemBuffer = realloc(gm->elemBuffer, sizeof(*gm->elemBuffer) * gm->elementAlloc);
+GUIUnifiedVertex* GUIWindow_checkElemBuffer(GUIWindow* w, int count) {
+	if(w->vertAlloc < w->vertCount + count) {
+		w->vertAlloc = MAX(w->vertAlloc * 2, w->vertAlloc + count);
+		w->vertBuffer = realloc(w->vertBuffer, sizeof(*w->vertBuffer) * w->vertAlloc);
 	}
 	
-	return gm->elemBuffer + gm->elementCount;
+	return w->vertBuffer + w->vertCount;
 }
 
 GUIUnifiedVertex* GUIManager_reserveElements(GUIManager* gm, int count) {
-	GUIUnifiedVertex* v = GUIManager_checkElemBuffer(gm, count);
-	gm->elementCount += count;
+	GUIUnifiedVertex* v = GUIWindow_checkElemBuffer(gm->curWin, count);
+	gm->curWin->vertCount += count;
+	gm->totalVerts += count;
 	return v;
 }
 
-void GUIManager_copyElements(GUIManager* gm, GUIUnifiedVertex* elems, int count) {
-	GUIManager_checkElemBuffer(gm, count);
-	memcpy(gm->elemBuffer + gm->elementCount, elems, count * sizeof(*gm->elemBuffer));
+void GUIManager_copyElements(GUIManager* gm, GUIUnifiedVertex* verts, int count) {
+	GUIWindow_checkElemBuffer(gm->curWin, count);
+	memcpy(gm->curWin->vertBuffer + gm->vertCount, verts, count * sizeof(*gm->curWin->vertBuffer));
+	gm->curWin->vertCount += count;
+	gm->totalVerts += count;
 }
 
 
-
-// Textures
-
-void GUIManager_UploadTexture(GUIManager* gm, void* pixeldata, int fmt, int width, int height) {
-	
-	
-	
-}
 
 
 
@@ -357,20 +380,78 @@ void GUIManager_HandleKeyInput(GUIManager* gm, InputState* is, InputEvent* iev) 
 			return; // not actually a kb event
 	}
 	
-	
-//	VEC_PUSH(gm->keysReleased
-
+	if(type == GUIEVENT_KeyUp) {
+		
+		VEC_PUSH(&gm->keysReleased, ((GUIKeyEvent){
+			.type = GUIEVENT_KeyUp,
+			.character = iev->character, 
+			.keycode = iev->keysym, 
+			.modifiers = translateModKeys(gm, iev),
+		}));
+	}
 }
 
 
 
 // Rendering
-
-
-
-static int gui_elem_sort_fn(GUIUnifiedVertex* a, GUIUnifiedVertex* b) {
+static int gui_vert_sort_fn(GUIUnifiedVertex* a, GUIUnifiedVertex* b) {
 	return a->z == b->z ? 0 : (a->z > b->z ? 1 : -1);
 }
+static int gui_win_sort_fn(GUIWindow* a, GUIWindow* b) {
+	return a->z == b->z ? 0 : (a->z > b->z ? 1 : -1);
+}
+
+
+
+void GUIManager_appendWindowVerts(GUIManager* gm, GUIWindow* w) {
+	
+//	double sort = getCurrentTime();
+	qsort(w->vertBuffer, w->vertCount, sizeof(*w->vertBuffer), (void*)gui_vert_sort_fn);
+//	printf("qsort time: %fus\n", timeSince(sort) * 1000000.0);
+	
+	if(VEC_LEN(&w->children) == 0) {
+		// simple memcpy
+		memcpy(gm->vertBuffer + gm->vertCount, w->vertBuffer, w->vertCount * sizeof(*gm->vertBuffer));
+		gm->vertCount += w->vertCount;
+		
+		return;
+	}
+	
+	// zipper the elements and windows together based on z
+	
+	VEC_SORT(&w->children, gui_win_sort_fn);
+	
+	int ci = 0;
+	GUIWindow** cw = VEC_DATA(&w->children);
+	
+	int vi = 0;
+	GUIUnifiedVertex* v = w->vertBuffer;
+	
+	GUIUnifiedVertex* tv = gm->vertBuffer + gm->vertCount;
+	while(1) {
+		
+		if(ci < VEC_LEN(&w->children) && ((*cw)->z < v->z || vi >= w->vertCount)) {
+			// append the window first
+			GUIManager_appendWindowVerts(gm, *cw);
+			cw++;
+			
+			tv = gm->vertBuffer + gm->vertCount;
+		}
+		else if(vi < w->vertCount) {
+			*tv = *v;
+			tv++;
+			vi++;
+			gm->vertCount++;
+		}
+		else {
+			break; // no more vertices or child windows
+		}
+	}
+	
+
+}
+
+
 
 
 static void preFrame(PassFrameParams* pfp, void* gm_) {
@@ -391,8 +472,15 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 //	printf("\n");
 	
 	sort = getCurrentTime();
-	gm->elementCount = 0;
 	
+	gm->totalVerts = 0;
+	gm->vertCount = 0;
+	
+	// clean up the windows from last frame
+	gm->windowHeap.cnt = 0;
+	gm->rootWin = GUIWindow_new(gm, 0);
+	VEC_LEN(&gm->windowStack) = 1;
+	gm->curWin = gm->rootWin;
 //	
 //	gm->elementCount = 0;
 //	gm->root->size = (Vector2){pfp->dp->targetSize.x, pfp->dp->targetSize.y};
@@ -428,7 +516,8 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	gm->curZ = 1.0;
 	gm->fontSize = 20.0f;
 	gm->checkboxBoxSize = 15;
-	
+	gm->time = pfp->appTime;
+	gm->timeElapsed = pfp->timeElapsed;
 	
 //	GUI_BoxFilled_(gm, (Vector2){20,20}, (Vector2){200,20},
 //		 8, &((Color4){1.0,0,0,1.0}),
@@ -442,16 +531,34 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	
 	
 	
-	
+	VEC_TRUNC(&gm->keysReleased);
 	gm->mouseWentUp = 0;
 	gm->mouseWentDown = 0;
 	gm->hotID = 0;
 	
+	// gc the element data
+	VEC_EACHP(&gm->elementData, i, d) {
+	START:
+		if(d->age > 10) {
+			if(d->freeFn) d->freeFn(d->data);
+			
+			if(VEC_LEN(&gm->elementData) > 1)  {
+				*d = VEC_TAIL(&gm->elementData);
+				VEC_LEN(&gm->elementData)--;
+				goto START;
+			}
+			else {
+				VEC_LEN(&gm->elementData) = 0;
+				break;
+			}
+		}
+		else {
+			d->age++;
+		}
+	}
 	
 	
-	
-	
-	
+	/* soft cursor needs special handling
 	time = timeSince(sort);
 	total += time;
 //	printf("render time: %fus\n", time  * 1000000.0);
@@ -491,15 +598,20 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 		}
 	}
 
-	
+	*/
 // 	static size_t framecount = 0;
 	
+	if(gm->totalVerts >= gm->vertAlloc) {
+		gm->vertAlloc = nextPOT(gm->totalVerts);
+		gm->vertBuffer = realloc(gm->vertBuffer, gm->vertAlloc * sizeof(*gm->vertBuffer));
+	}
 	
- 	sort = getCurrentTime();
+	GUIManager_appendWindowVerts(gm, gm->rootWin);
+ //	sort = getCurrentTime();
 // 	gui_debugFileDumpVertexBuffer(gm, "/tmp/gpuedit/presortdump", framecount);
-	qsort(gm->elemBuffer, gm->elementCount, sizeof(*gm->elemBuffer), (void*)gui_elem_sort_fn);
- 	time = timeSince(sort);
-	total += time;
+	//qsort(gm->elemBuffer, gm->elementCount, sizeof(*gm->elemBuffer), (void*)gui_elem_sort_fn);
+ //	time = timeSince(sort);
+//	total += time;
 //	printf("qsort time: %fus\n", time  * 1000000.0);
 	
 // 	gui_debugFileDumpVertexBuffer(gm, "/tmp/gpuedit/framedump", framecount);
@@ -508,9 +620,12 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	
 // 	framecount++;
  	sort = getCurrentTime();
-	memcpy(vmem, gm->elemBuffer, gm->elementCount * sizeof(*gm->elemBuffer));
+	memcpy(vmem, gm->vertBuffer, gm->vertCount * sizeof(*gm->vertBuffer));
 	 time = timeSince(sort);
 	total += time;
+	
+
+	
 //	printf("memcpy time: %fus\n", time  * 1000000.0);
 //	printf("total time: %fus\n", total  * 1000000.0);
 #undef printf
@@ -548,7 +663,7 @@ static void draw(void* gm_, GLuint progID, PassDrawParams* pdp) {
 	
 	PCBuffer_bind(&gm->instVB);
 	offset = PCBuffer_getOffset(&gm->instVB);
-	glDrawArrays(GL_POINTS, offset / sizeof(GUIUnifiedVertex), gm->elementCount);
+	glDrawArrays(GL_POINTS, offset / sizeof(GUIUnifiedVertex), gm->vertCount);
 	
 	glexit("");
 }

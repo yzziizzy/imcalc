@@ -16,9 +16,12 @@ typedef struct GUIRenderParams {
 
 
 
-GUIUnifiedVertex* GUIManager_checkElemBuffer(GUIManager* gm, int count);
+
+GUIUnifiedVertex* GUIWindow_checkElemBuffer(GUIWindow* w, int count);
 GUIUnifiedVertex* GUIManager_reserveElements(GUIManager* gm, int count);
-void GUIManager_copyElements(GUIManager* gm, GUIUnifiedVertex* elems, int count);
+void GUIManager_copyElements(GUIManager* gm, GUIUnifiedVertex* verts, int count);
+
+
 
 static inline AABB2 gui_clipTo(AABB2 parent, AABB2 child) {
 	return (AABB2){
@@ -201,10 +204,23 @@ void gui_drawVCenteredTextLine(
 );
 
 
+void GUI_SetHot_(GUIManager* gm, void* id, void* data, void (*freeFn)(void*));
+void GUI_SetActive_(GUIManager* gm, void* id, void* data, void (*freeFn)(void*));
+void* GUI_GetData_(GUIManager* gm, void* id);
+void GUI_SetData_(GUIManager* gm, void* id, void* data, void (*freeFn)(void*));
+
 
 int GUI_MouseInside_(GUIManager* gm, Vector2 tl, Vector2 sz);
 int GUI_MouseWentUp(GUIManager* gm, int button);
 int GUI_MouseWentDown(GUIManager* gm, int button);
+
+// create a new window, push it to the stack, and set it current
+void GUI_BeginWindow_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, float z, unsigned long flags);
+#define GUI_BeginWindow(a,b,c,d) GUI_BeginWindow_(gm, a, b, c, d)
+
+// pop the window stack and set the previous window to be current
+void GUI_EndWindow_(GUIManager* gm);
+#define GUI_EndWindow GUI_EndWindow_(gm)
 
 // returns true if clicked
 int GUI_Button_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* text);
@@ -217,6 +233,12 @@ int GUI_Checkbox_(GUIManager* gm, void* id, Vector2 tl, char* label, int* state)
 
 // returns true if *this* radio button is active
 int GUI_RadioButton_(GUIManager* gm, void* id, Vector2 tl, char* label, void** state, int isDefault);
+
+// returns true on a change
+int GUI_IntEdit_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, long* num);
+
+
+int GUI_SelectBox_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char** options, int* selectedOption);
 
 
 void GUI_Box_(GUIManager* gm, Vector2 tl, Vector2 sz, float width, Color4* borderColor);

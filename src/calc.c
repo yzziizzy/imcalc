@@ -34,7 +34,19 @@ void draw_gui_root(GUIManager* gm) {
 	
 	static int opts_active = 0;
 	static int opt_1 = 0;
+	static int selOpt = 1;
 	static void* rad = 0;
+	
+	static long num = 1337;
+
+	static char* opts[] = {
+		"Red",
+		"Green",
+		"Blue",
+		"Yellow",
+		NULL,
+	};
+
 
 	if(GUI_ToggleButton_(gm, 680001, (Vector2){10,10}, (Vector2){100,20}, "Options", &opts_active)) {
 	
@@ -44,8 +56,10 @@ void draw_gui_root(GUIManager* gm) {
 		GUI_RadioButton_(gm, 680011, (Vector2){100,160}, "Radio 2", &rad, 0);
 		GUI_RadioButton_(gm, 680012, (Vector2){100,180}, "Radio 3", &rad, 0);
 		GUI_RadioButton_(gm, 680013, (Vector2){100,200}, "Radio 4", &rad, 0);
-	
+		
+		GUI_IntEdit_(gm, 680020, (Vector2){200,200}, (Vector2){200, 30}, &num);
 
+		GUI_SelectBox_(gm, 680030, (Vector2){200,100}, (Vector2){200, 30}, opts, &selOpt);
 	}
 	else {
 	

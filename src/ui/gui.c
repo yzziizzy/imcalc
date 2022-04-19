@@ -15,7 +15,53 @@
 
 
 
+void GUI_SetHot_(GUIManager* gm, void* id, void* data, void (*freeFn)(void*)) {
+	if(gm->hotID == id) return;
+	
+	if(gm->hotID && gm->hotFree) {
+		gm->hotFree(gm->hotData);
+	}
+	
+	gm->hotID = id;
+	gm->hotData = data;
+	gm->hotFree = freeFn;
+}
 
+void GUI_SetActive_(GUIManager* gm, void* id, void* data, void (*freeFn)(void*)) {
+	if(gm->activeID == id) return;
+	
+	if(gm->activeID && gm->activeFree) {
+		gm->activeFree(gm->activeData);
+	}
+	
+	gm->activeID = id;
+	gm->activeData = data;
+	gm->activeFree = freeFn;
+}
+
+
+void* GUI_GetData_(GUIManager* gm, void* id) {
+	
+	VEC_EACHP(&gm->elementData, i, d) {
+		if(id == d->id) {
+			d->age = 0;
+			return d->data;
+		}
+	}	
+
+	return NULL;
+}
+
+
+void GUI_SetData_(GUIManager* gm, void* id, void* data, void (*freeFn)(void*)) {
+	VEC_INC(&gm->elementData);
+	
+	GUIElementData* d = &VEC_TAIL(&gm->elementData);
+	d->id = id;
+	d->data = data;
+	d->freeFn = freeFn;
+	d->age = 0;
+}
 
 
 
@@ -493,7 +539,7 @@ void gui_debugFileDumpVertexBuffer(GUIManager* gm, char* filePrefix, int fileNum
 	
 	
 	f = fopen(fname, "wb");
-	gui_debugDumpVertexBuffer(gm->elemBuffer, gm->elementCount, f);
+	gui_debugDumpVertexBuffer(gm->vertBuffer, gm->vertCount, f);
 	fclose(f);
 }
 

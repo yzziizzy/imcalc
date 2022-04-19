@@ -182,6 +182,12 @@ typedef struct GUIEvent {
 } GUIEvent;
 
 
+typedef struct GUIKeyEvent {
+	enum GUIEventType type;
+	int keycode;
+	int character;
+	unsigned int modifiers;
+} GUIKeyEvent;
 
 
 #define GUIMOUSECURSOR_DYNAMIC   -1
@@ -191,22 +197,36 @@ typedef struct GUIEvent {
 #define GUIMOUSECURSOR_H_MOVE  0x04
 #define GUIMOUSECURSOR_V_MOVE  0x05
 
-#define GUI_MAXIMIZE_X      0x0001
-#define GUI_MAXIMIZE_Y      0x0002
-#define GUI_NO_CLIP         0x0004
-#define GUI_SIZE_TO_CONTENT 0x0008 // NYI: (gravity makes this very complicated) automatic, based on children
-#define GUI_AUTO_SIZE       0x0010 // manual flag, for the bottom level
-#define GUI_CHILD_TABBING   0x0020 // grab tab events and cycle focused elements
+// do not z-sort the rendered elements of this window
+#define GUI_NO_SORT      0x0001ul
+
+// do not clip this window to its parent's bounds (popups, modals, menus)
+#define GUI_NO_CLIP      0x0002ul
 
 
 
+typedef struct GUIElementData {
+	void* id;
+	int age; // in frames
+	void* data;
+	void (*freeFn)(void*);
+} GUIElementData;
+
+typedef struct GUIWindow {
+	void* id;
+	AABB2 clip;
+	float z;
+	unsigned long flags;
+
+	struct GUIWindow* parent;
+	VEC(struct GUIWindow*) children;
+	
+	int vertCount;
+	int vertAlloc;
+	GUIUnifiedVertex* vertBuffer;
+} GUIWindow;
 
 /*
-The general idea is this:
-The gui is held in a big tree. The tree is walked depth-first from the bottom up, resulting in
-a mostly-sorted list. A sort is then run on z-index to ensure proper order. The list is then
-rendered all at once through a single unified megashader using the geometry stage to expand
-points into quads.
 
 */
 typedef struct GUIManager {
@@ -214,9 +234,10 @@ typedef struct GUIManager {
 	PCBuffer instVB;
 	GLuint vao;
 	
-	int elementCount;
-	int elementAlloc;
-	GUIUnifiedVertex* elemBuffer;
+	int totalVerts; // per-frame running count used to allocate enough storage for the full flattened tree
+	int vertCount; // head position used while flattening the tree
+	int vertAlloc;
+	GUIUnifiedVertex* vertBuffer;
 	
 	Vector2i screenSize;
 	
@@ -235,10 +256,30 @@ typedef struct GUIManager {
 	void* hotID;
 	void* activeID;
 	
+	void* hotData;
+	void* activeData;
+	
+	void (*hotFree)(void*);
+	void (*activeFree)(void*);
+	
+	VEC(GUIElementData) elementData;
+	
 	// per-frame event queue
 	VEC(GUIEvent) events;
 	
-	VEC(int) keysReleased;
+	VEC(GUIKeyEvent) keysReleased;
+	
+	double time;
+	double timeElapsed;
+	
+	struct {
+		long alloc;
+		long cnt;
+		GUIWindow* buf;
+	} windowHeap;
+	VEC(GUIWindow*) windowStack;
+	GUIWindow* curWin;
+	GUIWindow* rootWin;
 	
 	// ---------------
 	
@@ -350,6 +391,7 @@ void GUIManager_init(GUIManager* gm, GUI_GlobalSettings* gs);
 void GUIManager_initGL(GUIManager* gm);
 GUIManager* GUIManager_alloc(GUI_GlobalSettings* gs);
 
+GUIWindow* GUIWindow_new(GUIManager* gm, GUIWindow* parent);
 
 RenderPass* GUIManager_CreateRenderPass(GUIManager* gm);
 PassDrawable* GUIManager_CreateDrawable(GUIManager* gm);
