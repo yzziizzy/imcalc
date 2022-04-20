@@ -409,7 +409,7 @@ void GUIManager_appendWindowVerts(GUIManager* gm, GUIWindow* w) {
 	qsort(w->vertBuffer, w->vertCount, sizeof(*w->vertBuffer), (void*)gui_vert_sort_fn);
 //	printf("qsort time: %fus\n", timeSince(sort) * 1000000.0);
 	
-	if(VEC_LEN(&w->children) == 0) {
+	if(0&&VEC_LEN(&w->children) == 0) {
 		// simple memcpy
 		memcpy(gm->vertBuffer + gm->vertCount, w->vertBuffer, w->vertCount * sizeof(*gm->vertBuffer));
 		gm->vertCount += w->vertCount;
@@ -433,14 +433,20 @@ void GUIManager_appendWindowVerts(GUIManager* gm, GUIWindow* w) {
 		if(ci < VEC_LEN(&w->children) && ((*cw)->z < v->z || vi >= w->vertCount)) {
 			// append the window first
 			GUIManager_appendWindowVerts(gm, *cw);
+			ci++;
 			cw++;
 			
 			tv = gm->vertBuffer + gm->vertCount;
 		}
 		else if(vi < w->vertCount) {
 			*tv = *v;
+			tv->pos.l += w->absClip.min.x;
+			tv->pos.r += w->absClip.min.x;
+			tv->pos.t += w->absClip.min.y;
+			tv->pos.b += w->absClip.min.y;
 			tv++;
 			vi++;
+			v++;
 			gm->vertCount++;
 		}
 		else {
@@ -450,7 +456,6 @@ void GUIManager_appendWindowVerts(GUIManager* gm, GUIWindow* w) {
 	
 
 }
-
 
 
 
@@ -473,14 +478,33 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	
 	sort = getCurrentTime();
 	
+	
+	// walk last frame's gui info to set window ids
+	float highestZ = -99999999.9;
+	GUIWindow* highestW = gm->windowHeap.buf; // incidentally the root window
+	GUIWindow* w = gm->windowHeap.buf;
+	for(int i = 0; i < gm->windowHeap.cnt; i++, w++) {
+		if(w->z >= highestZ && boxContainsPoint2p(&w->absClip, &gm->lastMousePos)) {
+			highestZ = w->z;
+			highestW = w;
+		}
+	}
+	
+	gm->mouseWinID = highestW->id;
+	
+	// reset the IM gui cache
+	
 	gm->totalVerts = 0;
 	gm->vertCount = 0;
 	
 	// clean up the windows from last frame
 	gm->windowHeap.cnt = 0;
 	gm->rootWin = GUIWindow_new(gm, 0);
-	VEC_LEN(&gm->windowStack) = 1;
+	VEC_TRUNC(&gm->windowStack);
+	VEC_PUSH(&gm->windowStack, gm->rootWin);
 	gm->curWin = gm->rootWin;
+	
+	gm->rootWin->clip = (AABB2){min: {0,0}, max: {gm->screenSize.x, gm->screenSize.y}};
 //	
 //	gm->elementCount = 0;
 //	gm->root->size = (Vector2){pfp->dp->targetSize.x, pfp->dp->targetSize.y};

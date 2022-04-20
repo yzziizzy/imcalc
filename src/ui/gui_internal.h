@@ -210,17 +210,27 @@ void* GUI_GetData_(GUIManager* gm, void* id);
 void GUI_SetData_(GUIManager* gm, void* id, void* data, void (*freeFn)(void*));
 
 
+Vector2 GUI_MousePos_(GUIManager* gm);
+#define GUI_MousePos() GUI_MousePos_(gm)
+
 int GUI_MouseInside_(GUIManager* gm, Vector2 tl, Vector2 sz);
-int GUI_MouseWentUp(GUIManager* gm, int button);
-int GUI_MouseWentDown(GUIManager* gm, int button);
+#define GUI_MouseInside(a, b) GUI_MouseInside_(gm, a, b)
+int GUI_MouseWentUp_(GUIManager* gm, int button);
+#define GUI_MouseWentUp(a) GUI_MouseWentUp_(gm, a)
+int GUI_MouseWentDown_(GUIManager* gm, int button);
+#define GUI_MouseWentDown(a) GUI_MouseWentDown_(gm, a)
+int GUI_MouseWentUpAnywhere_(GUIManager* gm, int button);
+#define GUI_MouseWentUpAnywhere(a) GUI_MouseWentUpAnywhere_(gm, a) 
+int GUI_MouseWentDownAnywhere_(GUIManager* gm, int button);
+#define GUI_MouseWentDownAnywhere(a) GUI_MouseWentDownAnywhere_(gm, a)
 
 // create a new window, push it to the stack, and set it current
 void GUI_BeginWindow_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, float z, unsigned long flags);
-#define GUI_BeginWindow(a,b,c,d) GUI_BeginWindow_(gm, a, b, c, d)
+#define GUI_BeginWindow(a,b,c,d,e) GUI_BeginWindow_(gm, a, b, c, d, e)
 
 // pop the window stack and set the previous window to be current
 void GUI_EndWindow_(GUIManager* gm);
-#define GUI_EndWindow GUI_EndWindow_(gm)
+#define GUI_EndWindow() GUI_EndWindow_(gm)
 
 // returns true if clicked
 int GUI_Button_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* text);

@@ -18,18 +18,18 @@ int GUI_Button_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* text) {
 	
 	int result = 0;
 	
-	if(GUI_MouseInside_(gm, tl, sz)) {
+	if(GUI_MouseInside(tl, sz)) {
 		HOT(id);
 	}
 	
 	if(gm->activeID == id) {
-		if(GUI_MouseWentUp(gm, 0)) {
+		if(GUI_MouseWentUp(0)) {
 			if(gm->hotID == id) result = 1;
 			ACTIVE(NULL);
 		}
 	}
 	else if(gm->hotID == id) {
-		if(GUI_MouseWentDown(gm, 0)) ACTIVE(id);
+		if(GUI_MouseWentDown(0)) ACTIVE(id);
 	}
 
 	
@@ -54,12 +54,12 @@ int GUI_Button_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* text) {
 // returns true if toggled on 
 int GUI_ToggleButton_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* text, int* state) {
 	
-	if(GUI_MouseInside_(gm, tl, sz)) {
+	if(GUI_MouseInside(tl, sz)) {
 		HOT(id);
 	}
 	
 	if(gm->activeID == id) {
-		if(GUI_MouseWentUp(gm, 0)) {
+		if(GUI_MouseWentUp(0)) {
 			if(gm->hotID == id) {
 				*state = !*state;
 			}
@@ -67,7 +67,7 @@ int GUI_ToggleButton_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* te
 		}
 	}
 	else if(gm->hotID == id) {
-		if(GUI_MouseWentDown(gm, 0)) ACTIVE(id);
+		if(GUI_MouseWentDown(0)) ACTIVE(id);
 	}
 
 	
@@ -97,12 +97,12 @@ int GUI_Checkbox_(GUIManager* gm, void* id, Vector2 tl, char* label, int* state)
 	
 	
 	
-	if(GUI_MouseInside_(gm, tl, boxSz)) {
+	if(GUI_MouseInside(tl, boxSz)) {
 		HOT(id);
 	}
 	
 	if(gm->activeID == id) {
-		if(GUI_MouseWentUp(gm, 0)) {
+		if(GUI_MouseWentUp(0)) {
 			if(gm->hotID == id) {
 				*state = !*state;
 			}
@@ -110,7 +110,7 @@ int GUI_Checkbox_(GUIManager* gm, void* id, Vector2 tl, char* label, int* state)
 		}
 	}
 	else if(gm->hotID == id) {
-		if(GUI_MouseWentDown(gm, 0)) ACTIVE(id);
+		if(GUI_MouseWentDown(0)) ACTIVE(id);
 	}
 
 	
@@ -139,12 +139,12 @@ int GUI_RadioButton_(GUIManager* gm, void* id, Vector2 tl, char* label, void** s
 		*state = id;
 	}
 	
-	if(GUI_MouseInside_(gm, tl, boxSz)) {
+	if(GUI_MouseInside(tl, boxSz)) {
 		HOT(id);
 	}
 	
 	if(gm->activeID == id) {
-		if(GUI_MouseWentUp(gm, 0)) {
+		if(GUI_MouseWentUp(0)) {
 			if(gm->hotID == id) {
 				*state = id;
 			}
@@ -152,7 +152,7 @@ int GUI_RadioButton_(GUIManager* gm, void* id, Vector2 tl, char* label, void** s
 		}
 	}
 	else if(gm->hotID == id) {
-		if(GUI_MouseWentDown(gm, 0)) ACTIVE(id);
+		if(GUI_MouseWentDown(0)) ACTIVE(id);
 	}
 
 	
@@ -176,20 +176,32 @@ int GUI_RadioButton_(GUIManager* gm, void* id, Vector2 tl, char* label, void** s
 int GUI_SelectBox_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char** options, int* selectedOption) {
 	
 	
-	if(GUI_MouseInside_(gm, tl, sz)) {
+	if(GUI_MouseInside(tl, sz)) {
 		HOT(id);
 	}
 	
 	if(gm->activeID == id) {
-//		if(GUI_MouseWentUp(gm, 0)) {
-//			if(gm->hotID == id) {
-//				*state = !*state;
-//			}
-//			ACTIVE(NULL);
-//		}
+		if(GUI_MouseWentUpAnywhere(0)) {
+			GUI_BeginWindow(id, V(tl.x + 3, tl.y + sz.y), V(tl.x, sz.y * 3), gm->curZ + 5, 0);
+			Vector2 mpos = GUI_MousePos();
+			
+			int n = mpos.y / sz.y;
+			
+			
+			int optsLen = 0;
+			for(char**p = options; *p != NULL; p++) optsLen++;
+			
+			if(n >= 0 && n < optsLen) {
+				*selectedOption = n;
+			}
+			
+			GUI_EndWindow();
+			
+			ACTIVE(NULL);
+		}
 	}
 	else if(gm->hotID == id) {
-		if(GUI_MouseWentDown(gm, 0)) ACTIVE(id);
+		if(GUI_MouseWentDown(0)) ACTIVE(id);
 	}
 
 	
@@ -207,13 +219,23 @@ int GUI_SelectBox_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char** opti
 	
 	if(gm->activeID == id) {
 		// draw the dropdown
-		gm->curZ += 1000.01;
+		
+		GUI_BeginWindow(id, V(tl.x + 3, tl.y + sz.y), V(tl.x, sz.y * 3), gm->curZ + 5, 0);
 		
 		gm->curZ += 0.01;
 		int cnt = 0;
 		for(char** p = options; *p; p++) {
+			
+			gm->curZ += 0.02;
+			GUI_TextLineCentered_(gm, *p, strlen(*p), V(0, sz.y * cnt + fontSz*.25 - 6), sz, "Arial", fontSz, C(.8,.8,.8));
+			gm->curZ -= 0.01;
+			
+			if(GUI_MouseInside(V(0, sz.y * cnt), sz)) {
+				GUI_BoxFilled_(gm, V(0, sz.y * cnt), sz, 0, C(.8,.6,.3), C(.7,.4,.2));
+			}
+			gm->curZ -= 0.01;
+
 			cnt++;
-			GUI_TextLineCentered_(gm, *p, strlen(*p), V(tl.x, sz.y * cnt + tl.y - fontSz*.25), sz, "Arial", fontSz, C(.8,.8,.8));
 		}
 		
 		gm->curZ -= 0.01;
@@ -221,9 +243,10 @@ int GUI_SelectBox_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char** opti
 		
 		Vector2 boxSz = {sz.x, sz.y * cnt};
 		
-		GUI_BoxFilled_(gm, V(tl.x, tl.y + sz.y), boxSz, 2, C(.8,.6,.3), C(.7,.4,.2));
+		GUI_BoxFilled_(gm, V(0,0), boxSz, 2, C(.5,.6,.6), C(.4,.4,.4));
 		
-		gm->curZ -= 1000.01;
+		GUI_EndWindow();
+		
 	}
 	
 	gm->curZ += 0.01;
@@ -256,12 +279,12 @@ int GUI_IntEdit_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, long* num) {
 	}
 	
 	
-	if(GUI_MouseInside_(gm, tl, sz)) {
+	if(GUI_MouseInside(tl, sz)) {
 		HOT(id);
 	}
 	
 	if(gm->hotID == id) {
-		if(GUI_MouseWentDown(gm, 0)) {
+		if(GUI_MouseWentDown(0)) {
 			ACTIVE(id);
 		}
 	}
@@ -368,8 +391,11 @@ void GUI_BeginWindow_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, float z,
 	w->z = z;
 	w->flags = flags;
 	
-	// TODO: calculate the absolute clipping region somewhere
-	w->clip = (AABB2){min: tl, max: {tl.x + sz.y, tl.y + sz.y}};
+	// TODO: calculate the proper visual clipping region
+	w->absClip.min.x = p->absClip.min.x + tl.x;
+	w->absClip.min.y = p->absClip.min.y + tl.y;
+	w->absClip.max.x = w->absClip.max.x + sz.x;
+	w->absClip.max.y = w->absClip.max.y + sz.y;
 	
 	VEC_PUSH(&p->children, w);
 	
@@ -386,9 +412,11 @@ void GUI_EndWindow_(GUIManager* gm) {
 		return;
 	}	
 	
-	VEC_POP(&gm->windowStack, gm->curWin);
+	VEC_POP1(&gm->windowStack);
 	
+	gm->curWin = VEC_TAIL(&gm->windowStack);
 }
+
 
 
 void GUI_Box_(GUIManager* gm, Vector2 tl, Vector2 sz, float width, Color4* borderColor) {
@@ -479,34 +507,47 @@ void GUI_TextLineCentered_(
 }
 
 
+Vector2 GUI_MousePos_(GUIManager* gm) {
+	return V(gm->lastMousePos.x - gm->curWin->absClip.min.x, gm->lastMousePos.y - gm->curWin->absClip.min.y);
+}
 
 int GUI_PointInBoxV_(GUIManager* gm, Vector2 tl, Vector2 size, Vector2 testPos) {
+	tl.x += gm->curWin->absClip.min.x;
+	tl.y += gm->curWin->absClip.min.y;
+	
 	if(!(testPos.x >= tl.x && 
 		testPos.y >= tl.y &&
 		testPos.x <= (tl.x + size.x) && 
-		testPos.y <= (tl.y  + size.y))) {
+		testPos.y <= (tl.y + size.y))) {
 		
 		return 0;
 	}
 	
 	return 1;
 }
-	
+
 int GUI_PointInBox_(GUIManager* gm, AABB2 box, Vector2 testPos) {
 	if(!boxContainsPoint2p(&box, &testPos)) return 0;
 	if(!boxContainsPoint2p(&gm->curClip, &testPos)) return 0;
 	
 	return 1;
 }
+
 	
 int GUI_MouseInside_(GUIManager* gm, Vector2 tl, Vector2 sz) {
-	return GUI_PointInBoxV_(gm, tl, sz, gm->lastMousePos);
+	return gm->curWin->id == gm->mouseWinID && GUI_PointInBoxV_(gm, tl, sz, gm->lastMousePos);
 }
 
-int GUI_MouseWentUp(GUIManager* gm, int button) {
+int GUI_MouseWentUp_(GUIManager* gm, int button) {
+	return gm->curWin->id == gm->mouseWinID && gm->mouseWentUp;
+}
+int GUI_MouseWentDown_(GUIManager* gm, int button) {
+	return gm->curWin->id == gm->mouseWinID && gm->mouseWentDown;
+}
+int GUI_MouseWentUpAnywhere_(GUIManager* gm, int button) {
 	return gm->mouseWentUp;
 }
-int GUI_MouseWentDown(GUIManager* gm, int button) {
+int GUI_MouseWentDownAnywhere_(GUIManager* gm, int button) {
 	return gm->mouseWentDown;
 }
 

@@ -214,7 +214,8 @@ typedef struct GUIElementData {
 
 typedef struct GUIWindow {
 	void* id;
-	AABB2 clip;
+	AABB2 clip; // relative to the parent
+	AABB2 absClip; // calculated absolute coordinates used for mouse and rendering
 	float z;
 	unsigned long flags;
 
@@ -224,6 +225,7 @@ typedef struct GUIWindow {
 	int vertCount;
 	int vertAlloc;
 	GUIUnifiedVertex* vertBuffer;
+	
 } GUIWindow;
 
 /*
@@ -252,6 +254,7 @@ typedef struct GUIManager {
 	
 	int mouseWentUp;
 	int mouseWentDown;
+	void* mouseWinID;
 	
 	void* hotID;
 	void* activeID;
