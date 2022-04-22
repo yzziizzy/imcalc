@@ -254,6 +254,7 @@ typedef struct GUIManager {
 	TextureAtlas* ta;
 	
 	// immediate mode stuff
+	VEC(AABB2) clipStack;
 	AABB2 curClip;
 	float curZ;
 	float fontSize;

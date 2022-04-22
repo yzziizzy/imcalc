@@ -504,61 +504,27 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	VEC_PUSH(&gm->windowStack, gm->rootWin);
 	gm->curWin = gm->rootWin;
 	
-	gm->rootWin->clip = (AABB2){min: {0,0}, max: {gm->screenSize.x, gm->screenSize.y}};
-//	
-//	gm->elementCount = 0;
-//	gm->root->size = (Vector2){pfp->dp->targetSize.x, pfp->dp->targetSize.y};
-//	gm->root->absClip = (AABB2){0,0, pfp->dp->targetSize.x, pfp->dp->targetSize.y};
-//	
-//	GUIRenderParams grp = {
-//		.offset = {0,0}, 
-//		.size = gm->root->size,
-//		.clip = gm->root->absClip,
-//	};
-//	
-////#define printf(...)
-//	
-//	GUIHeader_updatePos(gm->root, &grp, pfp);
-	time = timeSince(sort);
-	total += time;
-//	printf("updatePos time: %fus\n", time  * 1000000.0);
+	gm->rootWin->absClip = (AABB2){min: {0,0}, max: {pfp->dp->targetSize.x, pfp->dp->targetSize.y}};
+	gm->rootWin->clip = gm->rootWin->absClip;
+	VEC_TRUNC(&gm->clipStack);
+	gm->curClip = gm->rootWin->clip;
 	
-	sort = getCurrentTime();
-	
-	//GUIHeader_render(gm->root, pfp);
-	
-	
-	
-	
-	
-	
-	// Rendering code
-	
-
-	
-	gm->curClip = (AABB2){0,0, pfp->dp->targetSize.x, pfp->dp->targetSize.y};
 	gm->curZ = 1.0;
 	gm->fontSize = 20.0f;
 	gm->checkboxBoxSize = 15;
 	gm->time = pfp->appTime;
 	gm->timeElapsed = pfp->timeElapsed;
 	
-//	GUI_BoxFilled_(gm, (Vector2){20,20}, (Vector2){200,20},
-//		 8, &((Color4){1.0,0,0,1.0}),
-//		&((Color4){0,1.0,0,1.0})
-//		);
-//	gm->curZ = 1.1;
-	
-//	GUI_Box_(gm, (Vector2){20,20}, (Vector2){20,20}, 8, &((Color4){0,1,1,1}));
 	
 	draw_gui_root(gm);
 	
 	
-	
+	// reset the inter-frame even accumulators
 	VEC_TRUNC(&gm->keysReleased);
 	gm->mouseWentUp = 0;
 	gm->mouseWentDown = 0;
 	gm->hotID = 0;
+	
 	
 	// gc the element data
 	VEC_EACHP(&gm->elementData, i, d) {

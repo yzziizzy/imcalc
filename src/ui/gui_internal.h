@@ -224,6 +224,15 @@ int GUI_MouseWentUpAnywhere_(GUIManager* gm, int button);
 int GUI_MouseWentDownAnywhere_(GUIManager* gm, int button);
 #define GUI_MouseWentDownAnywhere(a) GUI_MouseWentDownAnywhere_(gm, a)
 
+
+
+// sets the current clipping region, respecting the current window
+void GUI_PushClip_(GUIManager* gm, Vector2 tl, Vector2 sz);
+#define GUI_PushClip(a, b) GUI_PushClip_(gm, a, b)
+
+void GUI_PopClip_(GUIManager* gm);
+#define GUI_PopClip() GUI_PopClip_(gm)
+
 // create a new window, push it to the stack, and set it current
 void GUI_BeginWindow_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, float z, unsigned long flags);
 #define GUI_BeginWindow(a,b,c,d,e) GUI_BeginWindow_(gm, a, b, c, d, e)

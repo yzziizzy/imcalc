@@ -282,6 +282,7 @@ struct cursor_data {
 
 struct edit_data {
 	struct cursor_data cursor;
+	float scrollX; // x offset to add to all text rendering code 
 };
 
 
@@ -429,18 +430,31 @@ int GUI_Edit_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, GUIString* str) 
 				ret = 1;
 			}
 			else {
-				handle_cursor(gm, &d->cursor, str);
+				ret |= handle_cursor(gm, &d->cursor, str);
 			}
 		}
 	}
+	
+	
+	float cursorOff = gui_getTextLineWidth(gm, font, fontSz, str->data, d->cursor.cursorPos);
+	
+	// calculate scroll offsets
+	if(cursorOff + d->scrollX > sz.x) {
+		d->scrollX = sz.x - cursorOff;	
+	}
+	else if(cursorOff + d->scrollX < 0) {
+		d->scrollX = -cursorOff;
+	}
+	
+	GUI_PushClip(tl, sz);
 	
 	// draw cursor and selection background
 	if(gm->activeID == id) {
 		gm->curZ += 0.001;
 		if(d->cursor.blinkTimer < 0.5) { 
 			gm->curZ += 0.001;
-			float cursorOff = gui_getTextLineWidth(gm, font, fontSz, str->data, d->cursor.cursorPos);
-			GUI_BoxFilled_(gm, V(tl.x + cursorOff , tl.y), V(2,sz.y), 0, C(.8,1,.3), C(.8,1,.3));
+			
+			GUI_BoxFilled_(gm, V(tl.x + cursorOff + d->scrollX, tl.y), V(2,sz.y), 0, C(.8,1,.3), C(.8,1,.3));
 			gm->curZ -= 0.001;
 		}
 		
@@ -448,21 +462,24 @@ int GUI_Edit_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, GUIString* str) 
 		d->cursor.blinkTimer = fmod(d->cursor.blinkTimer, 1.0);
 		
 		if(d->cursor.selectPivot > -1) {
-			float cursorOff = gui_getTextLineWidth(gm, font, fontSz, str->data, d->cursor.cursorPos);
 			float pivotOff = gui_getTextLineWidth(gm, font, fontSz, str->data, d->cursor.selectPivot);
 			
 			int min = MIN(cursorOff, pivotOff);
 			int max = MAX(cursorOff, pivotOff);
 			
 			
-			GUI_BoxFilled_(gm, V(tl.x + min , tl.y), V(max - min,sz.y), 0, C(.3,1,.7), C(.3,1,.7));
+			GUI_BoxFilled_(gm, V(tl.x + min + d->scrollX, tl.y), V(max - min,sz.y), 0, C(.3,1,.7), C(.3,1,.7));
 			
 		}
 		gm->curZ -= 0.001;
 	}
 	
+
+	
 	gm->curZ += 0.01;
-	GUI_TextLine_(gm, str->data, str->len, V(tl.x, tl.y +5+ fontSz * .75), "Arial", fontSz, &((Color4){.9,.9,.9,1}));
+	
+	GUI_TextLine_(gm, str->data, str->len, V(tl.x + d->scrollX, tl.y +5+ fontSz * .75), "Arial", fontSz, &((Color4){.9,.9,.9,1}));
+	GUI_PopClip();
 	gm->curZ -= 0.01;
 	
 	return ret;
@@ -594,6 +611,26 @@ int GUI_IntEdit_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, long* num) {
 }
 
 
+// sets the current clipping region, respecting the current window
+void GUI_PushClip_(GUIManager* gm, Vector2 tl, Vector2 sz) {
+	VEC_PUSH(&gm->clipStack, gm->curClip);
+
+	Vector2 abstl = vAdd2(tl, gm->curWin->absClip.min);
+	gm->curClip = gui_clipTo(gm->curWin->absClip, (AABB2){min: abstl, max: vAdd2(abstl, sz)});
+}
+
+void GUI_PopClip_(GUIManager* gm) {
+	if(VEC_LEN(&gm->clipStack) <= 0) {
+		fprintf(stderr, "Tried to pop an empty clip stack\n");
+		return;
+	}
+	
+	VEC_POP(&gm->clipStack, gm->curClip);
+}
+
+
+
+
 // create a new window, push it to the stack, and set it current
 void GUI_BeginWindow_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, float z, unsigned long flags) {
 	GUIWindow* w, *p;
@@ -611,6 +648,9 @@ void GUI_BeginWindow_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, float z,
 	w->absClip.max.x = w->absClip.max.x + sz.x;
 	w->absClip.max.y = w->absClip.max.y + sz.y;
 	
+	VEC_PUSH(&gm->clipStack, gm->curClip);
+	gm->curClip = w->absClip;
+	
 	VEC_PUSH(&p->children, w);
 	
 	VEC_PUSH(&gm->windowStack, w);
@@ -627,8 +667,9 @@ void GUI_EndWindow_(GUIManager* gm) {
 	}	
 	
 	VEC_POP1(&gm->windowStack);
-	
 	gm->curWin = VEC_TAIL(&gm->windowStack);
+	
+	VEC_POP(&gm->clipStack, gm->curClip);	
 }
 
 
