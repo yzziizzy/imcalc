@@ -38,6 +38,14 @@ void draw_gui_root(GUIManager* gm) {
 	static void* rad = 0;
 	
 	static long num = 1337;
+	static GUIString str = {0};
+	
+	if(str.alloc == 0) {
+		str.data = malloc(64);
+		strcpy(str.data, "Foobar");
+		str.alloc = 64;
+		str.len = strlen(str.data);
+	}
 
 	static char* opts[] = {
 		"Red",
@@ -56,6 +64,9 @@ void draw_gui_root(GUIManager* gm) {
 		GUI_RadioButton_(gm, 680011, (Vector2){100,160}, "Radio 2", &rad, 0);
 		GUI_RadioButton_(gm, 680012, (Vector2){100,180}, "Radio 3", &rad, 0);
 		GUI_RadioButton_(gm, 680013, (Vector2){100,200}, "Radio 4", &rad, 0);
+		
+		
+		GUI_Edit_(gm, 680019, (Vector2){200,20}, (Vector2){200, 30}, &str);
 		
 		GUI_IntEdit_(gm, 680020, (Vector2){200,200}, (Vector2){200, 30}, &num);
 

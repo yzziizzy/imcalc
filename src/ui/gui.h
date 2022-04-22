@@ -204,6 +204,13 @@ typedef struct GUIKeyEvent {
 #define GUI_NO_CLIP      0x0002ul
 
 
+// just a way of grouping the memory data with the buffer. Nothing more.
+typedef struct GUIString {
+	size_t alloc;
+	size_t len;
+	char* data;
+} GUIString;
+
 
 typedef struct GUIElementData {
 	void* id;
