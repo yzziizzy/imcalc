@@ -56,7 +56,7 @@ char* ld_add[] = {
 	"-lGL", "-lGLEW", "-lGLU",
 	"-lX11", "-lXfixes", 
 	"-lpng", 
-	"-lpcre2-8",
+	"-lmpfr", "-lgmp",
 	NULL,
 };
 

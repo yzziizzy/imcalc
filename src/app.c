@@ -37,7 +37,7 @@
 //#include "commands.h"
 #include "ui/gui.h"
 
-
+#include <mpfr.h>
 
 
 
@@ -71,6 +71,13 @@ void resize_callback(XStuff* xs, void* gm_) {
 void initApp(XStuff* xs, AppState* as, int argc, char* argv[]) {
 	
 	srand((unsigned int)time(NULL));
+	
+	
+	
+	mpfr_set_default_prec(128);
+	
+	as->calc = calloc(1, sizeof(*as->calc));
+	calc_init(as->calc);
 	
 	
 	as->lastFrameTime = getCurrentTime();
@@ -425,6 +432,10 @@ void appLoop(XStuff* xs, AppState* as, InputState* is) {
 		
 		PERF(now = getCurrentTime());
 		RenderPass_preFrameAll(as->guiPass, &pfp);
+		
+		draw_gui_root(as->gui, as->calc);
+		
+		
 		RenderPass_renderAll(as->guiPass, pfp.dp);
 		RenderPass_postFrameAll(as->guiPass);
 		PERF(printf("gui render time: %fus\n", timeSince(now) * 1000000.0));

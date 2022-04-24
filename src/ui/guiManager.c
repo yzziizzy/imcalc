@@ -463,11 +463,7 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	GUIManager* gm = (GUIManager*)gm_;
 	
 	
-	GUIUnifiedVertex* vmem = PCBuffer_beginWrite(&gm->instVB);
-	if(!vmem) {
-		printf("attempted to update invalid PCBuffer in GUIManager\n");
-		return;
-	}
+
 	
 	
 
@@ -515,39 +511,6 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	gm->time = pfp->appTime;
 	gm->timeElapsed = pfp->timeElapsed;
 	
-	
-	draw_gui_root(gm);
-	
-	
-	// reset the inter-frame even accumulators
-	VEC_TRUNC(&gm->keysReleased);
-	gm->mouseWentUp = 0;
-	gm->mouseWentDown = 0;
-	gm->hotID = 0;
-	
-	
-	// gc the element data
-	VEC_EACHP(&gm->elementData, i, d) {
-	START:
-		if(d->age > 10) {
-			if(d->freeFn) d->freeFn(d->data);
-			
-			if(VEC_LEN(&gm->elementData) > 1)  {
-				*d = VEC_TAIL(&gm->elementData);
-				VEC_LEN(&gm->elementData)--;
-				goto START;
-			}
-			else {
-				VEC_LEN(&gm->elementData) = 0;
-				break;
-			}
-		}
-		else {
-			d->age++;
-		}
-	}
-	
-	
 	/* soft cursor needs special handling
 	time = timeSince(sort);
 	total += time;
@@ -589,41 +552,31 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	}
 
 	*/
-// 	static size_t framecount = 0;
-	
+
+}
+
+static void draw(void* gm_, GLuint progID, PassDrawParams* pdp) {
+	GUIManager* gm = (GUIManager*)gm_;
+	size_t offset;
+
+	GUIUnifiedVertex* vmem = PCBuffer_beginWrite(&gm->instVB);
+	if(!vmem) {
+		printf("attempted to update invalid PCBuffer in GUIManager\n");
+		return;
+	}
+
 	if(gm->totalVerts >= gm->vertAlloc) {
 		gm->vertAlloc = nextPOT(gm->totalVerts);
 		gm->vertBuffer = realloc(gm->vertBuffer, gm->vertAlloc * sizeof(*gm->vertBuffer));
 	}
 	
 	GUIManager_appendWindowVerts(gm, gm->rootWin);
+
  //	sort = getCurrentTime();
-// 	gui_debugFileDumpVertexBuffer(gm, "/tmp/gpuedit/presortdump", framecount);
-	//qsort(gm->elemBuffer, gm->elementCount, sizeof(*gm->elemBuffer), (void*)gui_elem_sort_fn);
- //	time = timeSince(sort);
-//	total += time;
-//	printf("qsort time: %fus\n", time  * 1000000.0);
-	
-// 	gui_debugFileDumpVertexBuffer(gm, "/tmp/gpuedit/framedump", framecount);
-	
-// 	printf("Elemcount: %ld\n", gm->elementCount);
-	
-// 	framecount++;
- 	sort = getCurrentTime();
 	memcpy(vmem, gm->vertBuffer, gm->vertCount * sizeof(*gm->vertBuffer));
-	 time = timeSince(sort);
-	total += time;
+	// time = timeSince(sort);
+//	total += time;
 	
-
-	
-//	printf("memcpy time: %fus\n", time  * 1000000.0);
-//	printf("total time: %fus\n", total  * 1000000.0);
-#undef printf
-}
-
-static void draw(void* gm_, GLuint progID, PassDrawParams* pdp) {
-	GUIManager* gm = (GUIManager*)gm_;
-	size_t offset;
 
 // 	if(mdi->uniformSetup) {
 // 		(*mdi->uniformSetup)(mdi->data, progID);
@@ -663,6 +616,40 @@ static void draw(void* gm_, GLuint progID, PassDrawParams* pdp) {
 static void postFrame(void* gm_) {
 	GUIManager* gm = (GUIManager*)gm_;
 	PCBuffer_afterDraw(&gm->instVB);
+	
+	// reset the inter-frame event accumulators
+	VEC_TRUNC(&gm->keysReleased);
+	gm->mouseWentUp = 0;
+	gm->mouseWentDown = 0;
+	gm->hotID = 0;
+	
+	
+	// gc the element data
+	VEC_EACHP(&gm->elementData, i, d) {
+	RESTART:
+		if(d->age > 10) {
+					
+			if(d->freeFn) {
+				d->freeFn(d->data);
+			}
+			
+			if(i < VEC_LEN(&gm->elementData) - 1)  {
+				*d = VEC_TAIL(&gm->elementData);
+				VEC_LEN(&gm->elementData)--;
+				gm->elementData.len--;
+				goto RESTART;
+			}
+			else {
+				VEC_LEN(&gm->elementData)--;
+				break;
+			}
+		}
+		else {
+			d->age++;
+		}
+	}
+	
+	
 }
 
 

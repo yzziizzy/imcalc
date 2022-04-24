@@ -211,6 +211,8 @@ typedef struct GUIString {
 	char* data;
 } GUIString;
 
+typedef int (*GUIEditFilterFn)(GUIString*, GUIKeyEvent*, int /*pos*/, void* /*user_data*/); 
+
 
 typedef struct GUIElementData {
 	void* id;

@@ -54,8 +54,13 @@ void* GUI_GetData_(GUIManager* gm, void* id) {
 
 
 void GUI_SetData_(GUIManager* gm, void* id, void* data, void (*freeFn)(void*)) {
-	VEC_INC(&gm->elementData);
 	
+	void* dd = GUI_GetData_(gm, id);
+	if(dd) {
+		printf("douplicate data setting\n");
+	}
+	
+	VEC_INC(&gm->elementData);
 	GUIElementData* d = &VEC_TAIL(&gm->elementData);
 	d->id = id;
 	d->data = data;

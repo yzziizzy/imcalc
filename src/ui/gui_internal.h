@@ -253,14 +253,22 @@ int GUI_Checkbox_(GUIManager* gm, void* id, Vector2 tl, char* label, int* state)
 // returns true if *this* radio button is active
 int GUI_RadioButton_(GUIManager* gm, void* id, Vector2 tl, char* label, void** state, int isDefault);
 
+// filter all input before accepting it
+void GUI_Edit_SetFilter_(GUIManager* gm, void* id, GUIEditFilterFn fn, void* data);
+#define GUI_Edit_SetFilter(a, b, c) GUI_Edit_SetFilter_(gm, a, b, c)
+
+// synthesizes an input event for the given edit control
+int GUI_Edit_Trigger_(GUIManager* gm, void* id, GUIString* str, int c);
+#define GUI_Edit_Trigger(a, b, c) GUI_Edit_Trigger_(gm, a, b, c)
 
 // returns true on a change
 int GUI_Edit_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, GUIString* s);
+#define GUI_Edit(a, b, c, d) GUI_Edit_(gm, a, b, c, d)
 
 // returns true on a change
 int GUI_IntEdit_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, long* num);
 
-
+// returns true on a change
 int GUI_SelectBox_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char** options, int* selectedOption);
 
 

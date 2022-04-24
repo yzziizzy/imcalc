@@ -7,6 +7,7 @@
 #include "settings.h"
 #include "window.h"
 #include "ui/gui.h"
+#include "calc.h"
 
 
 typedef struct AppScreen {
@@ -42,6 +43,8 @@ typedef struct AppState {
 	
 	GUIManager* gui;
 	RenderPass* guiPass;
+	
+	calculator_t* calc;
 
 	MatrixStack view;
 	MatrixStack proj;

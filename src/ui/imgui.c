@@ -283,6 +283,10 @@ struct cursor_data {
 struct edit_data {
 	struct cursor_data cursor;
 	float scrollX; // x offset to add to all text rendering code 
+	char synthed_change; // indicates that the buffer was changed externally
+	
+	GUIEditFilterFn filter_fn;
+	void* filter_user_data;
 };
 
 
@@ -305,81 +309,104 @@ static void delete_selection(struct cursor_data* cd, GUIString* str) {
 }
 
 // return 1 on changes
-static int handle_cursor(GUIManager* gm, struct cursor_data* cd, GUIString* str) {
+static int handle_cursor(GUIManager* gm, struct cursor_data* cd, GUIString* str, GUIKeyEvent* e) {
+	int ret = 0;
+
+
+	switch(e->keycode) {
+		case XK_Left:
+			if(e->modifiers & GUIMODKEY_SHIFT && cd->selectPivot == -1) { // start selection
+				if(cd->cursorPos > 0) { // cant's start a selection leftward from the left edge
+					cd->selectPivot = cd->cursorPos;
+					cd->cursorPos--;
+				}
+			}
+			else { // just move the cursor normally
+				cd->cursorPos = cd->cursorPos - 1 <= 0 ? 0 : cd->cursorPos - 1;
+				if(!(e->modifiers & GUIMODKEY_SHIFT)) cd->selectPivot = -1;
+			}
+			goto BLINK;
+							
+		case XK_Right: 
+			if(e->modifiers & GUIMODKEY_SHIFT && cd->selectPivot == -1) { // start selection
+				if(cd->cursorPos < str->len) { // cant's start a selection leftward from the left edge
+					cd->selectPivot = cd->cursorPos;
+					cd->cursorPos++;
+				}
+			}
+			else { // just move the cursor normally
+				cd->cursorPos = cd->cursorPos + 1 > str->len ? str->len : cd->cursorPos + 1;
+				if(!(e->modifiers & GUIMODKEY_SHIFT)) cd->selectPivot = -1;
+			}
+			goto BLINK;
+			
+		case XK_BackSpace:
+			if(cd->selectPivot > -1) { // delete the selection
+				delete_selection(cd, str);
+			}
+			else if(cd->cursorPos > 0) { // just one character
+				memmove(str->data + cd->cursorPos - 1, str->data + cd->cursorPos, str->len - cd->cursorPos + 1);
+				cd->cursorPos = cd->cursorPos > 0 ? cd->cursorPos - 1 : 0;
+				str->len--;
+				cd->selectPivot = -1;
+				ret = 1;
+			}
+			
+			goto BLINK;
+			
+		case XK_Delete: 
+			if(cd->selectPivot > -1) { // delete the selection
+				delete_selection(cd, str);
+			}
+			else if(cd->cursorPos < str->len) { // just one character
+				memmove(str->data + cd->cursorPos, str->data + cd->cursorPos + 1, str->len - cd->cursorPos);
+				str->len--;
+				cd->selectPivot = -1;
+				ret = 1;
+			}
+			
+			goto BLINK;
+							
+//			case XK_Return: ACTIVE(NULL); break;
+	}
+	
+	return ret;
+
+BLINK:
+	cd->blinkTimer = 0;		
+	
+	return ret;
+}
+
+// returns 1 on changes made to the buffer
+static int handle_input(GUIManager* gm, struct cursor_data* cd, GUIString* str, GUIKeyEvent* e) {
 	int ret = 0;
 	
-	VEC_EACHP(&gm->keysReleased, i, e) {
-
-		switch(e->keycode) {
-			case XK_Left:
-				if(e->modifiers & GUIMODKEY_SHIFT && cd->selectPivot == -1) { // start selection
-					if(cd->cursorPos > 0) { // cant's start a selection leftward from the left edge
-						cd->selectPivot = cd->cursorPos;
-						cd->cursorPos--;
-					}
-				}
-				else { // just move the cursor normally
-					cd->cursorPos = cd->cursorPos - 1 <= 0 ? 0 : cd->cursorPos - 1;
-					if(!(e->modifiers & GUIMODKEY_SHIFT)) cd->selectPivot = -1;
-				}
-				goto BLINK;
-								
-			case XK_Right: 
-				if(e->modifiers & GUIMODKEY_SHIFT && cd->selectPivot == -1) { // start selection
-					if(cd->cursorPos < str->len) { // cant's start a selection leftward from the left edge
-						cd->selectPivot = cd->cursorPos;
-						cd->cursorPos++;
-					}
-				}
-				else { // just move the cursor normally
-					cd->cursorPos = cd->cursorPos + 1 > str->len ? str->len : cd->cursorPos + 1;
-					if(!(e->modifiers & GUIMODKEY_SHIFT)) cd->selectPivot = -1;
-				}
-				goto BLINK;
-				
-			case XK_BackSpace:
-				if(cd->selectPivot > -1) { // delete the selection
-					delete_selection(cd, str);
-				}
-				else if(cd->cursorPos > 0) { // just one character
-					memmove(str->data + cd->cursorPos - 1, str->data + cd->cursorPos, str->len - cd->cursorPos + 1);
-					cd->cursorPos = cd->cursorPos > 0 ? cd->cursorPos - 1 : 0;
-					str->len--;
-					cd->selectPivot = -1;
-					ret = 1;
-				}
-				
-				goto BLINK;
-				
-			case XK_Delete: 
-				if(cd->selectPivot > -1) { // delete the selection
-					delete_selection(cd, str);
-				}
-				else if(cd->cursorPos < str->len) { // just one character
-					memmove(str->data + cd->cursorPos, str->data + cd->cursorPos + 1, str->len - cd->cursorPos);
-					str->len--;
-					cd->selectPivot = -1;
-					ret = 1;
-				}
-				
-				goto BLINK;
-								
-//			case XK_Return: ACTIVE(NULL); break;
+	if(isprint(e->character)) {
+	
+		if(cd->selectPivot > -1) {
+			delete_selection(cd, str);
 		}
 		
-		continue;
-	
-	BLINK:
-		cd->blinkTimer = 0;		
+		check_string(str, 1);
+		memmove(str->data + cd->cursorPos + 1, str->data + cd->cursorPos, str->len - cd->cursorPos + 1);
+		str->data[cd->cursorPos] = e->character;
+		str->len++;
+		cd->cursorPos++;
+		cd->blinkTimer = 0;
+		
+		ret = 1;
+	}
+	else {
+		ret |= handle_cursor(gm, cd, str, e);
 	}
 	
 	return ret;
 }
 
 
-// returns true on a change
-int GUI_Edit_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, GUIString* str) {
-	int ret = 0;
+// filter all input before accepting it
+void GUI_Edit_SetFilter_(GUIManager* gm, void* id, GUIEditFilterFn fn, void* data) {
 	struct edit_data* d;
 	
 	if(!(d = GUI_GetData_(gm, id))) {
@@ -387,6 +414,52 @@ int GUI_Edit_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, GUIString* str) 
 		d->cursor.selectPivot = -1;
 		GUI_SetData_(gm, id, d, free);
 	}
+	
+	d->filter_fn = fn;
+	d->filter_user_data = data;
+}
+
+
+// synthesizes an input event for the given edit control
+int GUI_Edit_Trigger_(GUIManager* gm, void* id, GUIString* str, int c) {
+	struct edit_data* d;
+	
+	if(!(d = GUI_GetData_(gm, id))) {
+		d = calloc(1, sizeof(*d));
+		d->cursor.selectPivot = -1;
+		GUI_SetData_(gm, id, d, free);
+	}
+	
+	GUIKeyEvent e = {
+		.type = GUIEVENT_KeyUp,
+		.character = c,
+		.keycode = 0,
+		.modifiers = 0,
+	};
+	
+	if(d->filter_fn && isprint(c)) {
+		if(!d->filter_fn(str, &e, d->cursor.cursorPos, d->filter_user_data)) return 0;
+	}
+	
+	int ret = handle_input(gm, &d->cursor, str, &e);
+	d->synthed_change |= ret;
+	
+	return ret;
+}
+
+// returns true on a change
+int GUI_Edit_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, GUIString* str) {
+	int ret;
+	struct edit_data* d;
+	
+	if(!(d = GUI_GetData_(gm, id))) {
+		d = calloc(1, sizeof(*d));
+		d->cursor.selectPivot = -1;
+		GUI_SetData_(gm, id, d, free);
+	}
+	
+	ret = d->synthed_change;
+	d->synthed_change = 0;
 	
 	
 	if(GUI_MouseInside(tl, sz)) {
@@ -415,23 +488,10 @@ int GUI_Edit_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, GUIString* str) 
 	// handle input
 	if(gm->activeID == id) {
 		VEC_EACHP(&gm->keysReleased, i, e) {
-			if(isprint(e->character)) {
-				if(d->cursor.selectPivot > -1) {
-					delete_selection(&d->cursor, str);
-				}
-				
-				check_string(str, 1);
-				memmove(str->data + d->cursor.cursorPos + 1, str->data + d->cursor.cursorPos, str->len - d->cursor.cursorPos + 1);
-				str->data[d->cursor.cursorPos] = e->character;
-				str->len++;
-				d->cursor.cursorPos++;
-				d->cursor.blinkTimer = 0;
-				
-				ret = 1;
+			if(d->filter_fn && isprint(e->character)) {
+				if(!d->filter_fn(str, e, d->cursor.cursorPos, d->filter_user_data)) continue;
 			}
-			else {
-				ret |= handle_cursor(gm, &d->cursor, str);
-			}
+			ret |= handle_input(gm, &d->cursor, str, e);
 		}
 	}
 	

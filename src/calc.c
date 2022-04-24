@@ -2,7 +2,7 @@
 
 
 
-
+#include <ctype.h>
 
 #include "calc.h"
 #include "ui/gui.h"
@@ -16,6 +16,21 @@
 
 
 
+static int num_edit_filter(GUIString* s, GUIKeyEvent* e, int pos, void* user_data) {
+	char c = e->character;
+	
+	if(isdigit(c)) return 1;
+	
+	if(c == '.') {
+		return NULL == strchr(s->data, '.');
+	}
+	
+	if(c == '-' && pos == 0 && s->data[0] != '-') return 1;
+	
+	if(!isprint(c)) return 1;
+	
+	return 0;
+}
 
 
 
@@ -23,7 +38,8 @@
 
 
 
-void draw_gui_root(GUIManager* gm) {
+
+void draw_gui_root(GUIManager* gm, calculator_t* c) {
 
 
 	static double acc = 0;
@@ -78,12 +94,8 @@ void draw_gui_root(GUIManager* gm) {
 		GUI_TextLine_(gm, num1, strlen(num1), (Vector2){270,120}, "Arial", 15, &((Color4){.9,.9,.9,1}));
 		free(num1);
 	
-		char* num = sprintfdup("%f", acc);
-		GUI_TextLine_(gm, num, strlen(num), (Vector2){270,150}, "Arial", 20, &((Color4){1,1,1,1}));
-		free(num);
 		
-		GUI_Box_(gm, (Vector2){260,130}, (Vector2){200,30}, 2, &((Color4){.8,.8,.8,1}));
-		
+		GUI_Edit_SetFilter(680400, num_edit_filter, c);		
 			
 		gm->curZ = 1.0;
 		
@@ -95,52 +107,59 @@ void draw_gui_root(GUIManager* gm) {
 		#define OFF(x, y) (Vector2){offx+sz*x+pad*x,offy+sz*y+pad*y}
 		
 		#define NUM(x) \
-			if(decimal > 0) { \
-				acc += x / pow(10, decimal); \
-				decimal++; \
-			} \
-			else { \
-				acc *= 10; acc += x; \
-			}
+			GUI_Edit_Trigger(680400, &c->acc, '0' + x);
 		
 		if(GUI_Button_(gm, 690007, OFF(0,0), (Vector2){sz,sz}, "7")) {
-			NUM(7.0);
+			NUM(7);
 		}
 		if(GUI_Button_(gm, 690008, OFF(1,0), (Vector2){sz,sz}, "8")) {
-			NUM(8.0);
+			NUM(8);
 		}
 		if(GUI_Button_(gm, 690009, OFF(2,0), (Vector2){sz,sz}, "9")) {
-			NUM(9.0);
+			NUM(9);
 		}
 		
 		if(GUI_Button_(gm, 690004, OFF(0,1), (Vector2){sz,sz}, "4")) {
-			NUM(4.0);
+			NUM(4);
 		}
 		if(GUI_Button_(gm, 690005, OFF(1,1), (Vector2){sz,sz}, "5")) {
-			NUM(5.0);
+			NUM(5);
 		}
 		if(GUI_Button_(gm, 690006, OFF(2,1), (Vector2){sz,sz}, "6")) {
-			NUM(6.0);
+			NUM(6);
 		}
 		
 		if(GUI_Button_(gm, 690001, OFF(0,2), (Vector2){sz,sz}, "1")) {
-			NUM(1.0);
+			NUM(1);
 		}
 		if(GUI_Button_(gm, 690002, OFF(1,2), (Vector2){sz,sz}, "2")) {
-			NUM(2.0);
+			NUM(2);
 		}
 		if(GUI_Button_(gm, 690003, OFF(2,2), (Vector2){sz,sz}, "3")) {
-			NUM(3.0);
+			NUM(3);
 		}
 		
 		if(GUI_Button_(gm, 690000, OFF(0,3), (Vector2){sz,sz}, "0")) {
-			NUM(0.0);
+			NUM(0);
 		}
 		if(GUI_Button_(gm, 690010, OFF(1,3), (Vector2){sz,sz}, ".")) {
-			decimal = decimal ? decimal : 1;
+//			decimal = decimal ? decimal : 1;
+			if(NULL == strchr(c->acc.data, '.')) {
+				GUI_Edit_Trigger(680400, &c->acc, '.');
+			}
 		}
 		if(GUI_Button_(gm, 690020, OFF(2,3), (Vector2){sz,sz}, "(-)")) {
 			acc *= -1;
+			if(c->acc.data[0] == '-') {
+				memmove(c->acc.data, c->acc.data + 1, c->acc.len);
+				c->acc.len--;
+			}
+			else {
+				memmove(c->acc.data + 1, c->acc.data, c->acc.len + 1);
+				c->acc.data[0] = '-';
+				c->acc.len++;	
+			}
+			
 		}
 		
 		if(GUI_Button_(gm, 690110, OFF(3,0), (Vector2){sz,sz}, "-")) {
@@ -209,20 +228,26 @@ void draw_gui_root(GUIManager* gm) {
 			decimal = 0;
 			op = 0;
 		}
+		
+		GUI_Edit_(gm, 680400, (Vector2){270,150}, (Vector2){200, 30}, &c->acc);
 	
 	}
 	
 	
 	
-	
-	
-
-
 
 }
 
 
 
+
+
+void calc_init(calculator_t* c) {
+
+	c->acc.len = 0;
+	c->acc.alloc = 256;
+	c->acc.data = calloc(1, sizeof(*c->acc.data) * c->acc.alloc); 
+}
 
 
 
