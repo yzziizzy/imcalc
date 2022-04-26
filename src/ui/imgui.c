@@ -11,8 +11,10 @@
 #define C4(r,g,b,a)  (&((Color4){r,g,b,a}))
 #define V(_x,_y) ((Vector2){(_x),(_y)})
 
-#define HOT(id) GUI_SetHot_(gm, id, NULL, NULL);
-#define ACTIVE(id) GUI_SetActive_(gm, id, NULL, NULL);
+#define HOT(id) GUI_SetHot_(gm, id, NULL, NULL)
+#define ACTIVE(id) GUI_SetActive_(gm, id, NULL, NULL)
+
+#define CLAMP(min, val, max) val = MIN(MAX(min, val), max)
 
 // returns true if clicked
 int GUI_Button_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* text) {
@@ -24,13 +26,13 @@ int GUI_Button_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* text) {
 	}
 	
 	if(gm->activeID == id) {
-		if(GUI_MouseWentUp(0)) {
+		if(GUI_MouseWentUp(1)) {
 			if(gm->hotID == id) result = 1;
 			ACTIVE(NULL);
 		}
 	}
 	else if(gm->hotID == id) {
-		if(GUI_MouseWentDown(0)) ACTIVE(id);
+		if(GUI_MouseWentDown(1)) ACTIVE(id);
 	}
 
 	
@@ -60,7 +62,7 @@ int GUI_ToggleButton_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* te
 	}
 	
 	if(gm->activeID == id) {
-		if(GUI_MouseWentUp(0)) {
+		if(GUI_MouseWentUp(1)) {
 			if(gm->hotID == id) {
 				*state = !*state;
 			}
@@ -68,7 +70,7 @@ int GUI_ToggleButton_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* te
 		}
 	}
 	else if(gm->hotID == id) {
-		if(GUI_MouseWentDown(0)) ACTIVE(id);
+		if(GUI_MouseWentDown(1)) ACTIVE(id);
 	}
 
 	
@@ -93,7 +95,7 @@ int GUI_ToggleButton_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char* te
 // returns true if checked
 int GUI_Checkbox_(GUIManager* gm, void* id, Vector2 tl, char* label, int* state) {
 	
-	float bs = gm->checkboxBoxSize;
+	float bs = gm->defaults.checkboxBoxSize;
 	Vector2 boxSz = {bs, bs};
 	
 	
@@ -103,7 +105,7 @@ int GUI_Checkbox_(GUIManager* gm, void* id, Vector2 tl, char* label, int* state)
 	}
 	
 	if(gm->activeID == id) {
-		if(GUI_MouseWentUp(0)) {
+		if(GUI_MouseWentUp(1)) {
 			if(gm->hotID == id) {
 				*state = !*state;
 			}
@@ -111,7 +113,7 @@ int GUI_Checkbox_(GUIManager* gm, void* id, Vector2 tl, char* label, int* state)
 		}
 	}
 	else if(gm->hotID == id) {
-		if(GUI_MouseWentDown(0)) ACTIVE(id);
+		if(GUI_MouseWentDown(1)) ACTIVE(id);
 	}
 
 	
@@ -133,7 +135,7 @@ int GUI_Checkbox_(GUIManager* gm, void* id, Vector2 tl, char* label, int* state)
 // returns true if *this* radio button is active
 int GUI_RadioButton_(GUIManager* gm, void* id, Vector2 tl, char* label, void** state, int isDefault) {
 	
-	float bs = gm->checkboxBoxSize;
+	float bs = gm->defaults.checkboxBoxSize;
 	Vector2 boxSz = {bs, bs};
 	
 	if(*state == NULL && isDefault) {
@@ -145,7 +147,7 @@ int GUI_RadioButton_(GUIManager* gm, void* id, Vector2 tl, char* label, void** s
 	}
 	
 	if(gm->activeID == id) {
-		if(GUI_MouseWentUp(0)) {
+		if(GUI_MouseWentUp(1)) {
 			if(gm->hotID == id) {
 				*state = id;
 			}
@@ -153,7 +155,7 @@ int GUI_RadioButton_(GUIManager* gm, void* id, Vector2 tl, char* label, void** s
 		}
 	}
 	else if(gm->hotID == id) {
-		if(GUI_MouseWentDown(0)) ACTIVE(id);
+		if(GUI_MouseWentDown(1)) ACTIVE(id);
 	}
 
 	
@@ -173,17 +175,171 @@ int GUI_RadioButton_(GUIManager* gm, void* id, Vector2 tl, char* label, void** s
 }
 
 
-// returns 1 when the value changes
-int GUI_OptionSlider_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char** options, int* selectedOption) {
-	int ret = 0;
+struct floatslider_data {
+	char buf[64];
+	size_t len;
+	float last_value;
+};
+
+// returns 1 on change
+int GUI_FloatSlider_(GUIManager* gm, void* id, Vector2 tl, float width, float min, float max, float incr, int prec, float* value) {
+	struct floatslider_data* d;
+	int first_run = 0;
 	
-	int cnt = 0;
-	for(char** p = options; *p; p++) {
+	if(!(d = GUI_GetData_(gm, id))) {
+		d = calloc(1, sizeof(*d));
+		d->buf[0] = 0;
+		first_run = 1;
+		GUI_SetData_(gm, id, d, free);
+	}
+	
+	float h = gm->defaults.sliderHeight;
+	Vector2 sz = {width, h};
+	float oldV = *value;
+	
+	if(GUI_MouseInside(tl, sz)) HOT(id);
+	
+	if(gm->activeID == id) {
+		Vector2 mp = GUI_MousePos();
+		
+		float v = mp.x - tl.x;
+		v = (v / width);
+		v = v < 0 ? 0 : (v > 1.0 ? 1.0 : v);
+		v *= max - min;
+		v += min;
+		
+		*value = v; 
+
+		if(GUI_MouseWentUp(1)) {
+			ACTIVE(NULL);
+		}
+	}
+	if(gm->hotID == id) {
+		if(GUI_MouseWentDown(1)) ACTIVE(id);
+		*value += GUI_GetScrollDist() * incr;
+	}
+	
+	*value = *value > max ? max : (*value < min ? min : *value);
+	float bw = (*value / (max - min)) * width;
+	
+	if(first_run || *value != d->last_value) {
+		d->len = snprintf(d->buf, 64, "%.*f", prec, *value);
+		d->last_value = *value;
+	}
+	
+	GUI_BoxFilled_(gm, V(tl.x, tl.y), V(bw, h), 0, C(.9,.6,.6), C(.9,.4,.4));
+	GUI_BoxFilled_(gm, V(tl.x + bw, tl.y), V(width - bw, h), 0, C(.5,.6,.9), C(.4,.4,.9));
+
+	GUI_TextLineCentered_(gm, d->buf, d->len, tl, sz, "Arial", gm->defaults.sliderFontSz, C(.8,.8,.8));
+
+	return *value != oldV;
+}
+
+struct intslider_data {
+	char buf[64];
+	size_t len;
+	long last_value;
+};
+
+// returns 1 on change
+int GUI_IntSlider_(GUIManager* gm, void* id, Vector2 tl, float width, long min, long max, long* value) {
+	struct intslider_data* d;
+	int first_run = 0;
+	
+	if(!(d = GUI_GetData_(gm, id))) {
+		d = calloc(1, sizeof(*d));
+		d->buf[0] = 0;
+		first_run = 1;
+		GUI_SetData_(gm, id, d, free);
+	}
 	
 	
+	float h = gm->defaults.sliderHeight;
+	Vector2 sz = {width, h};
+	long oldV = *value;
+	
+	if(GUI_MouseInside(tl, sz)) HOT(id);
+	
+	if(gm->activeID == id) {
+		Vector2 mp = GUI_MousePos();
+		
+		float v = mp.x - tl.x;
+		v = (v / width);
+		v = v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
+		v *= max - min;
+		v += min;
+		*value = floor(v); 
+
+		if(GUI_MouseWentUp(1)) {
+			ACTIVE(NULL);
+		}
+	}
+	if(gm->hotID == id) {
+		if(GUI_MouseWentDown(1)) ACTIVE(id);
+		*value += GUI_GetScrollDist();
 	}
 
-	return ret;
+	*value = *value > max ? max : (*value < min ? min : *value);
+	float bw = ((float)*value / (float)(max - min)) * width;
+	
+	
+	if(first_run || *value != d->last_value) {
+		d->len = snprintf(d->buf, 64, "%ld", *value);
+		d->last_value = *value;		
+	}
+	
+	GUI_BoxFilled_(gm, V(tl.x, tl.y), V(bw, h), 0, C(.9,.6,.6), C(.9,.4,.4));
+	GUI_BoxFilled_(gm, V(tl.x + bw, tl.y), V(width - bw, h), 0, C(.5,.6,.9), C(.4,.4,.9));
+
+	GUI_TextLineCentered_(gm, d->buf, d->len, tl, sz, "Arial", gm->defaults.sliderFontSz, C(.8,.8,.8));
+
+	return *value != oldV;
+}
+
+
+// returns 1 when the value changes _due to this control_
+int GUI_OptionSlider_(GUIManager* gm, void* id, Vector2 tl, float width, char** options, int* selectedOption) {
+	int ret = 0;
+	float h = gm->defaults.sliderHeight;
+	Vector2 sz = {width, h};
+	int old_opt = *selectedOption; 
+	
+	int cnt = 0;
+	for(char** p = options; *p; p++) cnt++;
+	
+	if(GUI_MouseInside(tl, sz)) {
+		HOT(id);
+	}
+	
+	if(gm->activeID == id) {
+		Vector2 mp = GUI_MousePos();
+		
+		float v = mp.x - tl.x;
+		v = (v / width);
+		v = v < 0 ? 0 : (v > 1.0 ? 1.0 : v);
+		*selectedOption = cnt * v;
+
+		if(GUI_MouseWentUp(1)) {
+			ACTIVE(NULL);
+		}
+	}
+	
+	if(gm->hotID == id) {
+		if(GUI_MouseWentDown(1)) ACTIVE(id);
+		*selectedOption += GUI_GetScrollDist();
+	}
+	
+	CLAMP(0, *selectedOption, cnt - 1);
+	
+	
+	float bw = ((float)(*selectedOption + 1) / (float)cnt) * width;
+	
+	GUI_BoxFilled_(gm, V(tl.x, tl.y), V(bw, h), 0, C(.9,.6,.6), C(.9,.4,.4));
+	GUI_BoxFilled_(gm, V(tl.x + bw, tl.y), V(width - bw, h), 0, C(.5,.6,.9), C(.4,.4,.9));
+
+	GUI_TextLineCentered_(gm, options[*selectedOption], -1, tl, sz, "Arial", gm->defaults.sliderFontSz, C(.8,.8,.8));
+
+	return old_opt != *selectedOption;
 }
 
 
@@ -191,33 +347,38 @@ int GUI_OptionSlider_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char** o
 int GUI_SelectBox_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char** options, int* selectedOption) {
 	int ret = 0;
 	
+	int optsLen = 0;
+	for(char**p = options; *p != NULL; p++) optsLen++;
+	
 	if(GUI_MouseInside(tl, sz)) {
 		HOT(id);
 	}
 	
 	if(gm->activeID == id) {
-		if(GUI_MouseWentUpAnywhere(0)) {
-			GUI_BeginWindow(id, V(tl.x + 3, tl.y + sz.y), V(tl.x, sz.y * 3), gm->curZ + 5, 0);
-			Vector2 mpos = GUI_MousePos();
-			
-			int n = mpos.y / sz.y;
-			
-			
-			int optsLen = 0;
-			for(char**p = options; *p != NULL; p++) optsLen++;
-			
-			if(n >= 0 && n < optsLen && *selectedOption != n) {
-				ret = 1;
-				*selectedOption = n;
+		if(GUI_MouseWentUpAnywhere(1)) {
+			if(!GUI_MouseInside(tl, sz)) {
+				GUI_BeginWindow(id, V(tl.x + 3, tl.y + sz.y), V(tl.x, sz.y * 3), gm->curZ + 5, 0);
+				Vector2 mpos = GUI_MousePos();
+				
+				int n = mpos.y / sz.y;
+				
+				if(n >= 0 && n < optsLen && *selectedOption != n) {
+					ret = 1;
+					*selectedOption = n;
+				}
+				
+				GUI_EndWindow();
+				
+				ACTIVE(NULL);
 			}
-			
-			GUI_EndWindow();
-			
+		}
+		else if(GUI_MouseWentDown(1)) {
 			ACTIVE(NULL);
 		}
 	}
 	else if(gm->hotID == id) {
-		if(GUI_MouseWentDown(0)) ACTIVE(id);
+		if(GUI_MouseWentDown(1)) ACTIVE(id);
+		*selectedOption -= GUI_GetScrollDist();
 	}
 
 	
@@ -231,7 +392,7 @@ int GUI_SelectBox_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, char** opti
 	float fontSz = gm->fontSize;
 	if(sz.y - (2*2) < fontSz) fontSz = sz.y - (2*2);
 
-
+	CLAMP(0, *selectedOption, optsLen - 1);
 	
 	if(gm->activeID == id) {
 		// draw the dropdown
@@ -382,6 +543,9 @@ BLINK:
 static int handle_input(GUIManager* gm, struct cursor_data* cd, GUIString* str, GUIKeyEvent* e) {
 	int ret = 0;
 	
+	cd->cursorPos = MIN(cd->cursorPos, str->len);
+	cd->selectPivot = MIN(cd->selectPivot, str->len);
+	
 	if(isprint(e->character)) {
 	
 		if(cd->selectPivot > -1) {
@@ -466,7 +630,7 @@ int GUI_Edit_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, GUIString* str) 
 		HOT(id);
 	}
 	if(gm->hotID == id) {
-		if(GUI_MouseWentDown(0)) ACTIVE(id);
+		if(GUI_MouseWentDown(1)) ACTIVE(id);
 	}
 	
 	
@@ -575,7 +739,7 @@ int GUI_IntEdit_(GUIManager* gm, void* id, Vector2 tl, Vector2 sz, long* num) {
 	}
 	
 	if(gm->hotID == id) {
-		if(GUI_MouseWentDown(0)) {
+		if(GUI_MouseWentDown(1)) {
 			ACTIVE(id);
 		}
 	}
@@ -854,16 +1018,20 @@ int GUI_MouseInside_(GUIManager* gm, Vector2 tl, Vector2 sz) {
 }
 
 int GUI_MouseWentUp_(GUIManager* gm, int button) {
-	return gm->curWin->id == gm->mouseWinID && gm->mouseWentUp;
+	return gm->curWin->id == gm->mouseWinID && gm->mouseWentUp[button];
 }
 int GUI_MouseWentDown_(GUIManager* gm, int button) {
-	return gm->curWin->id == gm->mouseWinID && gm->mouseWentDown;
+	return gm->curWin->id == gm->mouseWinID && gm->mouseWentDown[button];
 }
 int GUI_MouseWentUpAnywhere_(GUIManager* gm, int button) {
-	return gm->mouseWentUp;
+	return gm->mouseWentUp[button];
 }
 int GUI_MouseWentDownAnywhere_(GUIManager* gm, int button) {
-	return gm->mouseWentDown;
+	return gm->mouseWentDown[button];
+}
+
+float GUI_GetScrollDist_(GUIManager* gm) {
+	return gm->curWin->id == gm->mouseWinID ? gm->scrollDist : 0;
 }
 
 

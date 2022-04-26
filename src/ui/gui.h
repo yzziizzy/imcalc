@@ -260,10 +260,11 @@ typedef struct GUIManager {
 	AABB2 curClip;
 	float curZ;
 	float fontSize;
-	float checkboxBoxSize;
+
 	
-	int mouseWentUp;
-	int mouseWentDown;
+	float scrollDist;
+	char mouseWentUp[16];
+	char mouseWentDown[16];
 	void* mouseWinID;
 	
 	void* hotID;
@@ -330,6 +331,13 @@ typedef struct GUIManager {
 	struct {
 		GUIFont* font;
 		float fontSize;
+		
+		float checkboxBoxSize;
+		float sliderHeight;
+		Color4 sliderBarColor;
+		Color4 sliderBgColor;
+		float sliderFontSz;
+		
 		struct Color4 textColor;
 		struct Color4 editBgColor;
 		struct Color4 editBorderColor;

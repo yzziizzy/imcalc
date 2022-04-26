@@ -34,7 +34,20 @@ static int num_edit_filter(GUIString* s, GUIKeyEvent* e, int pos, void* user_dat
 
 
 
-
+static void accumulate(calculator_t* c) {
+	
+	calc_history_t* h = calloc(1, sizeof(*h));
+	
+	h->text = strdup(c->acc.data);
+	
+	mpfr_init(h->value);
+	mpfr_strtofr(h->value, c->acc.data, NULL, 0, 0);
+	
+	VEC_PUSH(&c->history, h);
+	
+	c->acc.len = 0;
+	c->acc.data[0] = 0;
+}
 
 
 
@@ -87,13 +100,18 @@ void draw_gui_root(GUIManager* gm, calculator_t* c) {
 		GUI_IntEdit_(gm, 680020, (Vector2){200,200}, (Vector2){200, 30}, &num);
 
 		GUI_SelectBox_(gm, 680030, (Vector2){200,100}, (Vector2){200, 30}, opts, &selOpt);
+		
+		static float v = 6.5;
+		GUI_FloatSlider(680040, ((Vector2){410,20}), 100, 0, 10, .33, 2, &v);
+		
+		GUI_OptionSlider_(gm, 680050, ((Vector2){410,60}), 100, opts, &selOpt);
+
+		static long v2 = 12;
+		GUI_IntSlider(680060, ((Vector2){410,100}), 100, 0, 16, &v2);
+
 	}
 	else {
-	
-		char* num1 = sprintfdup("%f", prev);
-		GUI_TextLine_(gm, num1, strlen(num1), (Vector2){270,120}, "Arial", 15, &((Color4){.9,.9,.9,1}));
-		free(num1);
-	
+		
 		
 		GUI_Edit_SetFilter(680400, num_edit_filter, c);		
 			
@@ -169,6 +187,8 @@ void draw_gui_root(GUIManager* gm, calculator_t* c) {
 			decimal = 0;
 			acc = 0;
 			op = '-';
+			
+			accumulate(c);
 		}
 		if(GUI_Button_(gm, 690120, OFF(3,1), (Vector2){sz,sz}, "+")) {
 			// addition operator
@@ -229,7 +249,18 @@ void draw_gui_root(GUIManager* gm, calculator_t* c) {
 			op = 0;
 		}
 		
-		GUI_Edit_(gm, 680400, (Vector2){270,150}, (Vector2){200, 30}, &c->acc);
+		GUI_Edit_(gm, 680400, (Vector2){250,240}, (Vector2){300, 30}, &c->acc);
+		
+		
+		VEC_EACH(&c->history, i, h) {
+			GUI_TextLine_(gm, h->text, strlen(h->text), (Vector2){270,210 - i * 20}, "Arial", 15, &((Color4){.9,.9,.9,1}));
+		
+		
+		}
+		
+		
+		
+		
 	
 	}
 	

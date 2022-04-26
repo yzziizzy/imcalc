@@ -337,10 +337,13 @@ void GUIManager_HandleMouseClick(GUIManager* gm, InputState* is, InputEvent* iev
 	};
 	
 	if(iev->type == EVENT_MOUSEDOWN) {
-		gm->mouseWentDown = 1;
+		gm->mouseWentDown[iev->button] = 1;
+		
 	}
 	if(iev->type == EVENT_MOUSEUP) {
-		gm->mouseWentUp = 1;
+		gm->mouseWentUp[iev->button] = 1;
+		if(iev->button == 4) gm->scrollDist += 1.0;
+		else if(iev->button == 5) gm->scrollDist -= 1.0;
 	}
 	
 
@@ -507,7 +510,9 @@ static void preFrame(PassFrameParams* pfp, void* gm_) {
 	
 	gm->curZ = 1.0;
 	gm->fontSize = 20.0f;
-	gm->checkboxBoxSize = 15;
+	gm->defaults.checkboxBoxSize = 15;
+	gm->defaults.sliderHeight = 20;
+	gm->defaults.sliderFontSz = 12;
 	gm->time = pfp->appTime;
 	gm->timeElapsed = pfp->timeElapsed;
 	
@@ -619,8 +624,11 @@ static void postFrame(void* gm_) {
 	
 	// reset the inter-frame event accumulators
 	VEC_TRUNC(&gm->keysReleased);
-	gm->mouseWentUp = 0;
-	gm->mouseWentDown = 0;
+	for(int i = 0; i < 16; i++) {
+		gm->mouseWentUp[i] = 0;
+		gm->mouseWentDown[i] = 0;
+	}
+	gm->scrollDist = 0;
 	gm->hotID = 0;
 	
 	

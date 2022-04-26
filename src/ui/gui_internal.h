@@ -224,6 +224,8 @@ int GUI_MouseWentUpAnywhere_(GUIManager* gm, int button);
 int GUI_MouseWentDownAnywhere_(GUIManager* gm, int button);
 #define GUI_MouseWentDownAnywhere(a) GUI_MouseWentDownAnywhere_(gm, a)
 
+float GUI_GetScrollDist_(GUIManager* gm);
+#define GUI_GetScrollDist() GUI_GetScrollDist_(gm)
 
 
 // sets the current clipping region, respecting the current window
@@ -252,6 +254,18 @@ int GUI_Checkbox_(GUIManager* gm, void* id, Vector2 tl, char* label, int* state)
 
 // returns true if *this* radio button is active
 int GUI_RadioButton_(GUIManager* gm, void* id, Vector2 tl, char* label, void** state, int isDefault);
+
+// returns 1 on change
+int GUI_FloatSlider_(GUIManager* gm, void* id, Vector2 tl, float width, float min, float max, float incr, int prec, float* value);
+#define GUI_FloatSlider(a,b,c,d,e,f,g,h) GUI_FloatSlider_(gm, a,b,c,d,e,f,g,h)
+
+// returns 1 on change
+int GUI_IntSlider_(GUIManager* gm, void* id, Vector2 tl, float width, long min, long max, long* value);
+#define GUI_IntSlider(a,b,c,d,e,f) GUI_IntSlider_(gm, a,b,c,d,e,f)
+
+// returns 1 when the value changes _due to this control_
+int GUI_OptionSlider_(GUIManager* gm, void* id, Vector2 tl, float width, char** options, int* selectedOption);
+#define GUI_OptionSlider(a,b,c,d,e) GUI_OptionSlider_(gm, a,b,c,d,e)
 
 // filter all input before accepting it
 void GUI_Edit_SetFilter_(GUIManager* gm, void* id, GUIEditFilterFn fn, void* data);

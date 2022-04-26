@@ -286,11 +286,6 @@ void gui_drawCharacter(
 	v->fg = GUI_COLOR4_TO_SHADER(*color);
 	v->bg = (struct ShaderColor4){0};
 	v->z = z;
-	
-	//v++;
-// 			gm->elementCount++;
-
-
 }
 
 void gui_drawTextLine(
@@ -324,7 +319,7 @@ void gui_drawTextLineAdv(
 	
 // 		printf("'%s'\n", bl->buf);
 	if(txt == NULL || charCount == 0) return;
-	
+	if(charCount == -1) charCount = strlen(txt);
 	
 	if(!font) font = gm->defaults.font;
 	if(!fontsize) fontsize = gm->defaults.fontSize; // HACK
